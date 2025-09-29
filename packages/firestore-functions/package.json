@@ -54,14 +54,14 @@
           "{projectRoot}/dist/cjs"
         ]
       },
-      "pkg-assets": {
+      "post-build": {
         "executor": "nx:run-commands",
         "dependsOn": [
           "^build-esm"
         ],
         "options": {
           "cwd": "{projectRoot}",
-          "command": "node .scripts/copy-assets-to-dist.mjs"
+          "command": "node .scripts/post-build.mjs"
         },
         "outputs": [
           "{projectRoot}/dist/package.json"
@@ -74,7 +74,7 @@
             "nx run firestore-functions:clean",
             "nx run firestore-functions:build-esm",
             "nx run firestore-functions:build-cjs",
-            "nx run firestore-functions:pkg-assets"
+            "nx run firestore-functions:post-build"
           ],
           "parallel": false
         },
