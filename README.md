@@ -6,6 +6,13 @@ Developer‑focused overview of the **Firebase‑Bridge** monorepo. This workspa
 
 ---
 
+## Support
+
+This project is made freely available under the [Apache 2.0 License](#license).  
+If you find it useful and would like to support ongoing development, you can [buy me a coffee](https://buymeacoffee.com/brycemarshall). ☕
+
+---
+
 ## Intent
 
 * **Move fast**: iterate on triggers and backend logic without the emulator boot/deploy loop.
