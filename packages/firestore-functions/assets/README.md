@@ -96,7 +96,9 @@ it('fires v1/v2 triggers', async () => {
 });
 ```
 
-> You can register **many** triggers for the same database/controller — even your entire production set — to simulate a full backend in tests.---
+> You can register **many** triggers for the same database/controller — even your entire production set — to simulate a full backend in tests.
+
+---
 
 ## Supported trigger shapes
 
