@@ -1,0 +1,7 @@
+{
+  "eslint.useFlatConfig": true,
+  "eslint.workingDirectories": [
+    { "pattern": "./*" }   // or list each package path explicitly
+  ],
+  "eslint.validate": ["typescript", "typescriptreact", "javascript", "json"]
+}

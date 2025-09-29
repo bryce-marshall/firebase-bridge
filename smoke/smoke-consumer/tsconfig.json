@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {},
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUncheckedIndexedAccess": true,
+    "typeRoots": [
+      "./node_modules/@types"
+    ]
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "_packed"
+  ]
+}

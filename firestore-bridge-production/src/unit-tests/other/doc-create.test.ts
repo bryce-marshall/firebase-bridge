@@ -1,0 +1,4 @@
+import { docCreateTests } from 'firestore-bridge-test-suites';
+import { testContext } from '../common/index.js';
+
+docCreateTests(testContext());

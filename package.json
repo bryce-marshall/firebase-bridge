@@ -1,0 +1,54 @@
+{
+  "name": "@firebase-bridge/source",
+  "version": "0.0.0",
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "jest --detectOpenHandles",
+    "firebase-emulators:start": "node ./.scripts/start-emulators.js"    
+  },
+  "private": true,
+  "dependencies": {
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "^6.4.0",
+    "google-gax": ">=5 <6"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.2",
+    "@eslint/js": "^9.8.0",
+    "@nx/esbuild": "21.5.3",
+    "@nx/eslint": "^21.4.1",
+    "@nx/eslint-plugin": "^21.4.1",
+    "@nx/jest": "21.2.3",
+    "@nx/js": "21.5.3",
+    "@nx/node": "21.5.3",
+    "@swc-node/register": "~1.9.1",
+    "@swc/core": "~1.5.7",
+    "@swc/helpers": "~0.5.11",
+    "@swc/jest": "~0.2.36",
+    "@types/jest": "^29.5.12",
+    "@types/node": "20.19.9",
+    "@typescript-eslint/eslint-plugin": "^8.40.0",
+    "@typescript-eslint/parser": "^8.40.0",
+    "esbuild": "^0.19.2",
+    "eslint": "^9.34.0",
+    "eslint-config-prettier": "^10.0.0",
+    "jest": "^29.7.0",
+    "jest-environment-node": "^29.7.0",
+    "jsonc-eslint-parser": "^2.1.0",
+    "nx": "21.2.3",
+    "prettier": "^2.6.2",
+    "publint": "^0.3.13",
+    "rimraf": "^6.0.1",
+    "ts-jest": "^29.1.0",
+    "ts-node": "10.9.1",
+    "tslib": "^2.3.0",
+    "typescript": "~5.8.2",
+    "typescript-eslint": "^8.40.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "firestore-bridge-production",
+    "firestore-bridge-test-suites",
+    "smoke/*"
+  ]
+}

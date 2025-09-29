@@ -1,0 +1,48 @@
+{
+  "name": "@firebase-bridge/firestore-admin",
+  "description": "High-fidelity in-memory mock of the Firebase Firestore Admin SDK (Gapic) for unit tests and local dev.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bryce-marshall/firebase-bridge.git",
+    "directory": "packages/firestore-admin"
+  },
+  "homepage": "https://github.com/bryce-marshall/firebase-bridge#readme",
+  "type": "module",
+  "main": "./cjs/index.js",
+  "module": "./esm/index.js",
+  "types": "./esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": {
+        "import": "./esm/index.d.ts",
+        "require": "./esm/index.d.cts"
+      },
+      "import": "./esm/index.js",
+      "require": "./cjs/index.js"
+    }
+  },
+  "sideEffects": false,
+  "peerDependencies": {
+    "firebase-admin": "^13.4.0",
+    "google-gax": ">=5 <6"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "firebase",
+    "firestore",
+    "firebase-functions",
+    "cloud-functions",
+    "testing",
+    "triggers",
+    "in-memory",
+    "mock",
+    "jest",
+    "vitest"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "name": "@firebase-bridge/firestore-functions",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "nx build firestore-functions",
+    "build:esm": "nx run firestore-functions:build-esm",
+    "build:cjs": "nx run firestore-functions:build-cjs",
+    "prepublishOnly": "nx build firestore-functions && node ../../tools/prepare-publish.mjs",
+    "publish:pkg": "npm publish ./dist --access public",
+    "pack:dry": "npm pack ./dist --dry-run"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "tslib": "^2.3.0",
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "^6.4.0",
+    "@jest/globals": "29.7.0"
+  },
+  "nx": {
+    "targets": {
+      "build-esm": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "tsc -p tsconfig.esm.json --pretty false",
+          "cwd": "{projectRoot}"
+        },
+        "outputs": [
+          "{projectRoot}/dist/esm"
+        ]
+      },
+      "build-cjs": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "^build-cjs"
+        ],
+        "options": {
+          "command": "npx tsc -p tsconfig.cjs.json --pretty false",
+          "cwd": "{projectRoot}"
+        },
+        "outputs": [
+          "{projectRoot}/dist/cjs"
+        ]
+      },
+      "pkg-assets": {
+        "executor": "nx:run-commands",
+        "dependsOn": [
+          "^build-esm"
+        ],
+        "options": {
+          "cwd": "{projectRoot}",
+          "command": "node .scripts/copy-assets-to-dist.mjs"
+        },
+        "outputs": [
+          "{projectRoot}/dist/package.json"
+        ]
+      },
+      "build": {
+        "executor": "nx:run-commands",
+        "options": {
+          "commands": [
+            "nx run firestore-functions:clean",
+            "nx run firestore-functions:build-esm",
+            "nx run firestore-functions:build-cjs",
+            "nx run firestore-functions:pkg-assets"
+          ],
+          "parallel": false
+        },
+        "outputs": [
+          "{projectRoot}/dist/esm",
+          "{projectRoot}/dist/cjs"
+        ]
+      }
+    }
+  }
+}

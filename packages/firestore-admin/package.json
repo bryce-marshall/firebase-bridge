@@ -1,0 +1,115 @@
+{
+  "name": "@firebase-bridge/firestore-admin",
+  "version": "0.0.1",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "High-fidelity in-memory mock of the Firebase Firestore Admin SDK (Gapic) for unit tests and local dev.",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "nx build firestore-admin",
+    "build:esm": "nx run firestore-admin:build-esm",
+    "build:cjs": "nx run firestore-admin:build-cjs",
+    "prepublishOnly": "nx build firestore-admin && node ../../tools/prepare-publish.mjs",
+    "publish:pkg": "npm publish ./dist --access public",
+    "pack:dry": "npm pack ./dist --dry-run"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "require": "./dist/cjs/index.js",
+      "import": "./dist/esm/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "@google-cloud/firestore": "~7.11.3",
+    "firebase-admin": "^13.4.0",
+    "google-gax": ">=4.3.3 <6"
+  },
+  "peerDependenciesMeta": {
+    "@google-cloud/firestore": {
+      "optional": false
+    },
+    "firebase-admin": {
+      "optional": false
+    },
+    "google-gax": {
+      "optional": false
+    }
+  },
+  "devDependencies": {
+    "firestore-bridge-test-suites": "0.0.1",
+    "@jest/globals": "29.7.0",
+    "@google-cloud/firestore": "7.11.3",
+    "google-gax": "^5.0.0",
+    "typescript": ">=5.5 <6",
+    "@types/node": "^20.0.0"
+  },
+  "nx": {
+    "targets": {
+      "build-esm": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "tsc -p tsconfig.esm.json --pretty false",
+          "cwd": "{projectRoot}"
+        },
+        "outputs": [
+          "{projectRoot}/dist/esm"
+        ]
+      },
+      "build-cjs": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "npx tsc -p tsconfig.cjs.json --pretty false",
+          "cwd": "{projectRoot}"
+        },
+        "outputs": [
+          "{projectRoot}/dist/cjs"
+        ]
+      },
+      "pkg-assets": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "{projectRoot}",
+          "command": "node .scripts/copy-assets-to-dist.mjs"
+        },
+        "outputs": [
+          "{projectRoot}/dist/package.json"
+        ]
+      },
+      "build": {
+        "executor": "nx:run-commands",
+        "options": {
+          "commands": [
+            "nx run firestore-admin:clean",
+            "nx run firestore-admin:build-esm",
+            "nx run firestore-admin:build-cjs",
+            "nx run firestore-admin:pkg-assets"
+          ],
+          "parallel": false
+        },
+        "outputs": [
+          "{projectRoot}/dist/esm",
+          "{projectRoot}/dist/cjs"
+        ]
+      }
+    }
+  }
+}

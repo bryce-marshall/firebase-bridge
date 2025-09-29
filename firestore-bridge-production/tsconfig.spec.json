@@ -1,0 +1,26 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./out-tsc/jest",
+    "types": [
+      "jest",
+      "node"
+    ],
+    "forceConsistentCasingInFileNames": true
+  },
+  "exclude": [
+    "src/lib**/*.*"
+  ],
+  "include": [
+    "jest.config.cjs",
+    "src/unit-tests/**/*.test.ts",
+    "src/unit-tests/**/*.spec.ts",
+    "src/unit-tests/**/*.d.ts",
+    "src/unit-tests/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "./tsconfig.lib.json"
+    }
+  ]
+}

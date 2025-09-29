@@ -1,0 +1,93 @@
+{
+  "name": "smoke-consumer",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "smoke": "node scripts/smoke-install.mjs",
+    "exec-cjs": "node dist/cjs/main.cjs",
+    "exec-esm": "node dist/esm/main.js",
+    "types:nodenext": "tsc -p tsconfig.nodenext.json --noEmit",
+    "types:node16": "tsc -p tsconfig.node16.json --noEmit",
+    "test": "npm run exec-cjs && npm run exec-esm && npm run types:nodenext && npm run types:node16",
+    "clean": "rimraf node_modules package-lock.json"
+  },
+  "dependencies": {
+    "@firebase-bridge/firestore-admin": "file:_packed/firestore-admin.tgz",
+    "@firebase-bridge/firestore-functions": "file:_packed/firestore-functions.tgz"
+  },
+  "devDependencies": {
+    "rimraf": "^6.0.0",
+    "typescript": "^5.6.3"
+  },
+  "nx": {
+    "targets": {
+      "smoke": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "{projectRoot}",
+          "command": "node scripts/smoke-install.mjs"
+        }
+      },
+      "build:cjs": {
+        "executor": "nx:run-commands",
+        "dependsOn": [],
+        "options": {
+          "cwd": "{projectRoot}",
+          "commands": [
+            "tsc -p tsconfig.node16.json",
+            "node scripts/rename-cjs.mjs"
+          ],
+          "parallel": false
+        },
+        "outputs": [
+          "{projectRoot}/dist/cjs"
+        ],
+        "cache": false
+      },
+      "build:esm": {
+        "executor": "nx:run-commands",
+        "dependsOn": [],
+        "options": {
+          "cwd": "{projectRoot}",
+          "command": "tsc -p tsconfig.nodenext.json"
+        },
+        "outputs": [
+          "{projectRoot}/dist/esm"
+        ],
+        "cache": false
+      },
+      "build:both": {
+        "executor": "nx:run-commands",
+        "dependsOn": [],
+        "options": {
+          "commands": [
+            "nx run smoke-consumer:build:cjs",
+            "nx run smoke-consumer:build:esm"
+          ],
+          "parallel": false
+        }
+      },
+      "exec-cjs": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "{projectRoot}",
+          "command": "node dist/cjs/main.cjs"
+        },
+        "cache": false
+      },
+      "exec-esm": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "{projectRoot}",
+          "command": "node dist/esm/main.js"
+        },
+        "cache": false
+      }
+    }
+  },
+  "workspaces": []
+}

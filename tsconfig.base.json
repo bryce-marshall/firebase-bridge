@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "composite": true,
+    "declarationMap": true,
+    "emitDeclarationOnly": true,
+    "importHelpers": true,
+    "isolatedModules": true,
+    "lib": ["es2022"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "noEmitOnError": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "es2022",
+    "paths": {
+      "@firebase-bridge/firestore-admin": [
+        "packages/firestore-admin/src/index.ts"
+      ],
+      "@firebase-bridge/firestore-admin/*": ["packages/firestore-admin/src/*"],
+      "@firebase-bridge/firestore-functions": [
+        "packages/firestore-functions/dist/index.d.ts"
+      ],
+      "@gcf/firestore-protos": [
+        "../../node_modules/@google-cloud/firestore/types/protos/firestore_v1_proto_api.d.ts"
+      ],
+      "firestore-bridge-production": [
+        "firestore-bridge-production/dist/index.d.ts"
+      ],
+      "firestore-bridge-test-suites": [
+        "firestore-bridge-test-suites/dist/index.d.ts"
+      ]
+    }
+  }
+}

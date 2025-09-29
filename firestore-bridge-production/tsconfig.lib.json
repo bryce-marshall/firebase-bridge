@@ -1,0 +1,26 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": "src",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/tsconfig.lib.tsbuildinfo",
+    "emitDeclarationOnly": false,
+    "forceConsistentCasingInFileNames": true,
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/lib/**/*.ts"
+  ],
+  "references": [
+  ],
+  "exclude": [
+    "jest.config.ts",
+    "src/unit-tests/**",
+    "src/**/*.spec.ts",
+    "src/**/*.test.ts",
+    "src/unit-tests**/*.ts"
+  ]
+}

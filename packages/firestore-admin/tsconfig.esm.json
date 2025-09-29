@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.lib.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "./src",
+    "outDir": "./dist/esm",
+    // ESM config (pairs with NodeNext resolution to avoid TS5110)
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    // Make the output unmistakably ESM-looking (optional but helpful)
+    "importHelpers": false,
+    // Declarations for the ESM build
+    "declaration": true,
+    "declarationMap": true,
+    // Build info + incremental
+    "incremental": false,
+    "composite": false,
+    "noEmitOnError": false,
+    "tsBuildInfoFile": "./.tsbuildinfo-esm",
+    "emitDeclarationOnly": false  
+  }
+}

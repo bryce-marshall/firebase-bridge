@@ -1,0 +1,75 @@
+{
+  "name": "@firebase-bridge/firestore-functions",
+  "description": "Bind firebase-functions v1 & v2 Firestore triggers to an in-memory Firestore (from @firebase-bridge/firestore-admin) for fast, deterministic backend tests—no emulator required.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bryce-marshall/firebase-bridge.git",
+    "directory": "packages/firestore-functions"
+  },
+  "homepage": "https://github.com/bryce-marshall/firebase-bridge#readme",
+  "type": "module",
+  "main": "./cjs/index.js",
+  "module": "./esm/index.js",
+  "types": "./esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": {
+        "import": "./esm/index.d.ts",
+        "require": "./esm/index.d.cts"
+      },
+      "import": "./esm/index.js",
+      "require": "./cjs/index.js"
+    },
+    "./v1": {
+      "types": {
+        "import": "./esm/lib/v1/index.d.ts",
+        "require": "./esm/lib/v1/index.d.cts"
+      },
+      "import": "./esm/lib/v1/index.js",
+      "require": "./cjs/lib/v1/index.js"
+    },
+    "./v2": {
+      "types": {
+        "import": "./esm/lib/v2/index.d.ts",
+        "require": "./esm/lib/v2/index.d.cts"
+      },
+      "import": "./esm/lib/v2/index.js",
+      "require": "./cjs/lib/v2/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "v1": [
+        "esm/lib/v1/index.d.ts"
+      ],
+      "v2": [
+        "esm/lib/v2/index.d.ts"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "firebase",
+    "firestore",
+    "firebase-functions",
+    "cloud-functions",
+    "testing",
+    "triggers",
+    "in-memory",
+    "mock",
+    "jest",
+    "vitest"
+  ],
+  "peerDependencies": {
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "^6.4.0",
+    "@firebase-bridge/firestore-admin": "0.0.x"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
