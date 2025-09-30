@@ -67,7 +67,7 @@
       "build-esm": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "tsc -p tsconfig.esm.json --pretty false",
+          "command": "tsc -p build.esm.tsconfig.json --pretty false",
           "cwd": "{projectRoot}"
         },
         "outputs": [
@@ -77,7 +77,7 @@
       "build-cjs": {
         "executor": "nx:run-commands",
         "options": {
-          "command": "npx tsc -p tsconfig.cjs.json --pretty false",
+          "command": "npx tsc -p build.cjs.tsconfig.json --pretty false",
           "cwd": "{projectRoot}"
         },
         "outputs": [
