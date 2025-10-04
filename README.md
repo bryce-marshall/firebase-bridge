@@ -214,11 +214,79 @@ The mock exposes a controllable clock (`SystemTime`) to make **commit/write/upda
 
 ---
 
-## Publishing (outline)
+## Publishing
 
-* Set each package’s `package.json` with `name`, `version`, `license: "Apache-2.0"`, and `files`
-* Ensure **LICENSE** (Apache‑2.0) is present in each package; include **NOTICE** where adapted Google files exist.
-* Build artifacts (e.g., `dist/`) and `npm publish --access public` from each package directory or via an Nx target.
+Follow this checklist when publishing any Firebase‑Bridge package.
+
+### 1. Prepare package metadata
+
+Each package must define:
+
+* `name`, `version`, and `license: "Apache‑2.0"`
+* `files` whitelist (e.g., `cjs/`, `esm/`, `LICENSE`, `NOTICE`, `README.md`, `package.json`)
+* `publishConfig.access: "public"`
+* Correct `exports` and `types` entries for both ESM and CJS
+* `sideEffects: false` unless the module performs work on import
+
+Include **LICENSE** in every package. Add a **NOTICE** file where Google‑derived code exists.
+
+### 2. Build artifacts
+
+Run the Nx build targets or package scripts to generate both ESM and CJS outputs:
+
+```bash
+npx nx run firestore-admin:build
+npx nx run firestore-functions:build
+```
+
+### 3. Sanity check before publishing
+
+Refer to `smoke/smoke-consumer/README.md` for pre‑publish validation steps. This confirms installability, import behavior, and type resolution in both CJS and ESM environments.
+
+### 4. Verify publish output
+
+From each package directory:
+
+```bash
+npm publish --dry-run
+```
+
+Confirm the tarball contents include only built files, licenses, and docs (no TypeScript sources).
+
+### 5. Authenticate with npm
+
+Login once via:
+
+```bash
+npm login
+```
+
+Ensure your account has publish rights under the `@firebase-bridge` scope.
+
+### 6. Publish
+
+From each package root:
+
+```bash
+npm publish --access public
+```
+
+Use `--tag next` for prereleases if desired.
+
+### 7. Tag the release in Git
+
+Tag each package individually:
+
+```bash
+git tag -a firestore-admin-v0.0.1 -m "firestore-admin v0.0.1"
+git tag -a firestore-functions-v0.0.1 -m "firestore-functions v0.0.1"
+git push --tags
+```
+
+### 8. Post‑publish
+
+* Confirm packages appear on npm and can be installed directly.
+* Update GitHub releases and changelog as needed.
 
 ---
 
