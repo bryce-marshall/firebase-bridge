@@ -31,16 +31,24 @@
     "node": ">=18"
   },
   "keywords": [
-    "firebase",
-    "firestore",
-    "firebase-functions",
-    "cloud-functions",
-    "testing",
-    "triggers",
-    "in-memory",
-    "mock",
-    "jest",
-    "vitest"
+  "firebase",
+  "firestore",
+  "firestore admin",
+  "firebase admin",
+  "firestore emulator",
+  "emulator alternative",
+  "in-memory firestore",
+  "mock firestore",
+  "firestore mock",
+  "firebase-functions",
+  "cloud functions",
+  "testing",
+  "unit testing",
+  "trigger",
+  "firestore trigger",
+  "jest",
+  "vitest",
+  "gapic"
   ],
   "publishConfig": {
     "access": "public"

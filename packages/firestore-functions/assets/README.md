@@ -1,18 +1,34 @@
 # @firebase-bridge/firestore-functions
 
-> Bind **`firebase-functions` v1 & v2 Firestore triggers** to an **in-memory Firestore** database from `@firebase-bridge/firestore-admin` — enabling fast, deterministic end‑to‑end trigger testing with no emulator boot or deploy loop.
+> Bind **`firebase-functions` v1 & v2 Firestore triggers** to an **in-memory Firestore** database from `@firebase-bridge/firestore-admin`. Enables fast, deterministic end‑to‑end trigger testing with no emulator boot or deploy loop.
 
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](#license)
 [![node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen.svg)](https://nodejs.org)
 [![typescript](https://img.shields.io/badge/TypeScript-Strict-blue.svg)](https://www.typescriptlang.org/)
 
-This package wires **Cloud Functions for Firestore** (both **v1** and **v2**) to the **in‑memory Firestore** provided by `@firebase-bridge/firestore-admin`. Your tests can simulate a **full backend** — registering all Firestore triggers your production app exports — and drive them by performing writes against the mock database.
+### What it is
 
-- **Dev dependency** for backend unit/integration tests
-- **No browser/client SDK support**
-- **Peer deps:** `firebase-admin`, `firebase-functions`
+This package wires **Cloud Functions for Firestore** (both **v1** and **v2**) to the **in‑memory Firestore** provided by the **[@firebase-bridge/firestore-admin](https://www.npmjs.com/package/@firebase-bridge/firestore-admin)** companion package. Your tests can simulate a **full backend** — registering all Firestore triggers your production app exports — and drive them by performing writes against the mock database. No emulator, network, or deploy step required.
 
-If you only need a Firestore mock (no triggers), see **[`@firebase-bridge/firestore-admin`](https://www.npmjs.com/package/@firebase-bridge/firestore-admin)**.
+- Adapts **Firestore trigger handlers** declared using `firebase-functions` **v1** (background functions) and **v2** (CloudEvents) so they are **invoked** by changes in the **in‑memory** database
+- Generates realistic **onCreate**, **onUpdate**, **onDelete**, and **onWrite** event payloads (params/subject IDs, `Change` vs `CloudEvent<Change<...>>`, `before`/`after` snapshots or v2 `data` shape) and metadata (event time/ID) suitable for backend tests
+- Preserves **commit semantics**: for multiple writes to the **same document** in a single atomic commit, **only the final state** for that path is delivered to triggers (no intermediary bleed‑through)
+- Respects **transaction/batch** boundaries; triggers fire **after** the commit is applied
+- Uses the mock’s **SystemTime** for event timestamps so your tests can be deterministic
+
+> **Note:** You can register **any compatible Cloud Function**. This package simulates **Firestore change events and snapshots** only; if your handler uses other Google Cloud services (Pub/Sub, Scheduler, Auth, Storage, etc.), provide your own **test doubles/mocks** or bind to those services' emulators for testing.
+
+### When to use it
+
+- Unit or integration testing of Cloud Functions that depend on Firestore triggers
+- Fast local testing in CI without the **Firestore Emulator**
+- Deterministic tests with controllable time and atomic commit semantics
+
+### Why not the emulator (for this use case)
+
+  - Zero boot time. Zero deploy loop. Zero external processes — just edit, save, and test
+  - Deterministic **in-memory Firestore** with controllable time
+  - Suited to tight test loops and CI where startup cost s, coalescing, route params)
 
 ---
 

@@ -1,16 +1,28 @@
 # @firebase-bridge/firestore-admin
 
-> High‑fidelity **in‑memory mock** for the **Firestore Admin SDK** — purpose‑built for fast, deterministic backend unit tests (no emulator boot, no deploy loop).
+> High‑fidelity **in‑memory mock** for the **Firestore Admin SDK**. Purpose‑built for fast, deterministic backend unit tests (no emulator boot, no deploy loop).
 
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](#license)
 [![node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen.svg)](https://nodejs.org)
 [![typescript](https://img.shields.io/badge/TypeScript-Strict-blue.svg)](https://www.typescriptlang.org/)
 
-This package lets you run a real `firebase-admin` **Firestore** instance entirely **in process** against an in‑memory database that closely mirrors Firestore semantics (CRUD, batches, transactions, queries, aggregations, vector values, listeners, etc.).
+### What it is
+
+This package lets you run a real `firebase-admin` **Firestore** instance entirely **in-process** against an in‑memory database with high-fidelity production Firestore semantics (CRUD, batches, transactions, queries, aggregations, vector values, listeners, etc.).
 
 - **Backend only** (Node.js). No client/browser APIs.
 - **Dev dependency** intended for **unit‑testing** and **rapid prototyping** of backend logic.
-- For Cloud Functions trigger testing (`firebase-functions` v1 & v2), use the companion package **`@firebase-bridge/firestore-functions`**.
+- To bind firebase-functions v1/v2 Firestore triggers to an in-memory Firestore database use the companion package **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)**.
+
+### When to use it
+- Unit and integration tests for backend code using `firebase-admin/firestore`
+- CI where the **Firestore Emulator** is slow or unavailable
+- Deterministic tests that need a controllable clock and fast resets
+
+### Why not the emulator (for this use case)
+- Zero boot time. Zero deploy loop. Zero external processes — just edit, save, and test
+- Deterministic **in-memory Firestore** with controllable time
+- Suited to tight test loops and CI where startup cost matters
 
 ---
 
