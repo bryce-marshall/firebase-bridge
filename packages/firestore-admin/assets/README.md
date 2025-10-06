@@ -8,7 +8,7 @@
 
 ### What it is
 
-This package lets you run a real `firebase-admin` **Firestore** instance entirely **in-process** against an in‑memory database with high-fidelity production Firestore semantics (CRUD, batches, transactions, queries, aggregations, vector values, listeners, etc.).
+This package lets you run a real `firebase-admin` **Firestore** instance entirely **in-process** against an in‑memory database with high-fidelity production Firestore semantics (CRUD, batches, transactions, queries, aggregations, vector values, listeners, etc).
 
 - **Backend only** (Node.js). No client/browser APIs.
 - **Dev dependency** intended for **unit‑testing** and **rapid prototyping** of backend logic.
