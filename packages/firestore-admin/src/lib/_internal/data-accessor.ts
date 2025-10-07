@@ -40,6 +40,7 @@ import {
   PathDataProvider,
   PathType,
 } from './path.js';
+import { object } from 'firebase-functions/v1/storage';
 
 const MILLIS_PER_SECOND = 1000;
 const SIXTY_SECONDS = MILLIS_PER_SECOND * 60;
@@ -1914,6 +1915,8 @@ export class DataAccessor implements PathDataProvider {
             arg.params[(part as ParamPathPart).name] = part.value;
           }
         }
+        Object.freeze(arg.params);
+        Object.freeze(arg);
         // Invoke via microtask to both unwind the call stack and isolate any subscriber exceptions.
         queueMicrotask(() => t.callback(arg));
       }

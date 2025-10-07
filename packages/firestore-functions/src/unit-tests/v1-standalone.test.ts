@@ -9,6 +9,34 @@ describe('v1 Standalone trigger tests', () => {
 
   const sleep = (ms = 50) => new Promise<void>((r) => setTimeout(r, ms));
 
+  beforeEach(() => {
+    ctrl.reset();
+  });
+
+  // it('respects trigger predicates', async () => {
+  //   let enabled = false;
+  //   const firestore = ctrl.firestore();
+  //   const col = firestore.collection('users');
+  //   const triggered: string[] = [];
+
+  //   const unsub = registerTrigger(
+  //     ctrl,
+  //     v1.firestore.document('users/{uid}').onCreate(async (_snap, ctx) => {
+  //       triggered.push(ctx.params.uid);
+  //     }),
+  //     () => enabled
+  //   );
+
+  //   await col.doc('user-1').set({ name: 'John' });
+  //   await sleep();
+  //   enabled = true;
+  //   await col.doc('user-2').set({ name: 'John' });
+  //   await sleep();
+  //   expect(triggered).toEqual(['user-2']);
+
+  //   unsub();
+  // });
+
   it('onCreate: snapshot & context expose expected properties', async () => {
     const firestore = ctrl.firestore();
     const doc = firestore.doc('users/id-create-1');

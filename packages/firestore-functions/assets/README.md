@@ -26,9 +26,9 @@ This package wires **Cloud Functions for Firestore** (both **v1** and **v2**) to
 
 ### Why not the emulator (for this use case)
 
-  - Zero boot time. Zero deploy loop. Zero external processes — just edit, save, and test
-  - Deterministic **in-memory Firestore** with controllable time
-  - Suited to tight test loops and CI where startup cost s, coalescing, route params)
+- Zero boot time. Zero deploy loop. Zero external processes — just edit, save, and test
+- Deterministic **in-memory Firestore** with controllable time
+- Suited to tight test loops and CI where startup cost s, coalescing, route params)
 
 ---
 
@@ -113,6 +113,51 @@ it('fires v1/v2 triggers', async () => {
 ```
 
 > You can register **many** triggers for the same database/controller — even your entire production set — to simulate a full backend in tests.
+
+### Optional per-event predicate (advanced)
+
+You can attach a **synchronous predicate** to any registered trigger to **gate** invocation after the route matches and the change kind (create/update/delete/write) is determined. If the predicate returns `false`, the handler is **not** invoked for that event.
+
+- Signature: `(arg: TriggerEventArg) => boolean`
+- Receives low-level event data (e.g., params, doc path/snap info) for precise control
+- Great for **feature flags**, **test-scoped filters**, or **param-based gating**
+
+```ts
+// Continuing from the Quick start example...
+
+let count = 0;
+
+// v1: only run when `enabled` is true
+const disposeV1 = bridgeV1.registerTrigger(
+  ctl,
+  v1.firestore.document('users/{uid}').onCreate(async (snap, ctx) => {
+    // ... your v1 handler ...
+  }),
+  () => count++ > 0
+);
+
+// v2: only run for a specific route param (e.g., uid starts with "test-")
+const disposeV2 = bridgeV2.registerTrigger(
+  ctl,
+  v2.firestore.onDocumentWritten('users/{uid}', async (event) => {
+    // ... your v2 handler ...
+  }),
+  (arg) => arg.params.uid?.startsWith('test-') === true
+);
+
+// Drive changes
+await db.collection('users').doc('user-1').set({ name: 'Alice' }); // v1 gated off, v2 gated off
+enabled = true;
+await db.collection('users').doc('test-2').set({ name: 'Bob' }); // v1 + v2 both allowed
+
+// Clean up
+disposeV1();
+disposeV2();
+```
+
+> Predicates run **in-process** and must be synchronous. If omitted, the trigger runs for **all** matching events.
+
+> Predicates run per delivered change after commit coalescing. In a batch that mutates multiple docs, a counter-based predicate (like “allow from the second event”) applies to the dispatch order of those changes, not to a specific doc. For doc-specific gating, use a param/data predicate (e.g., arg.params.uid?.startsWith('test-')).
 
 ---
 

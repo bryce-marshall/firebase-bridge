@@ -5,6 +5,7 @@ import {
 } from '@firebase-bridge/firestore-admin';
 import { DocumentSnapshot } from 'firebase-admin/firestore';
 import type { CloudFunction } from 'firebase-functions/v2';
+import { RegisterTriggerOptions } from '../_internal/types.js';
 import {
   buildCloudEvent,
   Kind,
@@ -37,6 +38,10 @@ import { getTriggerMetaV2 } from './meta-helper.js';
  *
  * @param target - The controller that provides access to the mock Firestore and its database stream.
  * @param handler - A v2 `CloudFunction` (either the wrapper exposing `.run` or a callable function).
+ * @param predicate Optional synchronous guard evaluated after route matching and change-kind filtering.
+ * If provided and it returns `false`, the Cloud Function is not invoked for that event.
+ * Receives the low-level {@link TriggerEventArg} (params, doc). Defaults to invoking for all
+ * matching events when omitted.
  * @returns A function that, when called, unregisters the trigger.
  *
  * @example
@@ -53,13 +58,23 @@ import { getTriggerMetaV2 } from './meta-helper.js';
  */
 export function registerTrigger(
   target: FirestoreController,
-  handler: CloudFunction<any>
+  handler: CloudFunction<any>,
+  options?: RegisterTriggerOptions
 ): () => void {
+  if (typeof handler.run !== 'function') {
+    throw new Error(
+      'CloudFunction.run() not available. Pass the exported CloudFunction wrapper ' +
+        'from firebase-functions/v2 (not the raw handler), or upgrade firebase-functions.'
+    );
+  }
+
   const { route, kinds } = getTriggerMetaV2(target, handler);
 
   return target.database.registerTrigger({
     route,
     callback: async (arg: TriggerEventArg) => {
+      if ((options?.predicate?.(arg) ?? true) !== true) return;
+
       type EmitKind = Kind | 'write';
       const firestore = target.firestore();
       const rec = toChangeRecord(firestore, arg.doc);
