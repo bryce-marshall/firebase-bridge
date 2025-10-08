@@ -7,7 +7,11 @@ import {
   CloudEvent,
   CloudFunction as CloudFunctionV2,
 } from 'firebase-functions/v2';
-import { RegisterTriggerOptions } from './_internal/types.js';
+import {
+  RegisterTriggerOptions,
+  TriggerErrorOrigin,
+  TriggerRunnerErrorEventArg,
+} from './types.js';
 import { } from './_internal/util.js';
 import {
   TriggerPayload as TriggerPayloadV1,
@@ -16,19 +20,27 @@ import {
 import { registerTrigger as registerTriggerV2 } from './v2/register-trigger.js';
 
 /**
- * @module TriggerOrchestrator
+ * # TriggerOrchestrator
  *
- * Orchestrates registration, enable/disable, observation, and waiting for
- * Firestore trigger handlers (Cloud Functions v1 **and** v2) against the
- * in-memory database from `@firebase-bridge/firestore-admin`.
+ * Coordinates **Cloud Functions for Firestore** triggers (both **v1** and **v2**) that
+ * are bound to the in-memory Firestore provided by
+ * **`@firebase-bridge/firestore-admin`**. It centralizes:
+ *
+ * - Handler registration keyed by a logical identifier you choose (e.g., an enum).
+ * - Global enable/disable controls (per-key and all-at-once).
+ * - Deterministic waiting utilities (await the next invocation or a predicate match).
+ * - Per-trigger stats (initiated/completed/error counts).
+ * - Observer hooks (`before`/`after`/`error`) for white-box validation.
+ * - Global error watching (surface trigger/observer failures to your tests).
  *
  * @remarks
- * - This module is intended for **test environments**. It helps you stand up a
- *   complete backend (Firestore data + trigger functions) without the emulator.
- * - External services (e.g., PubSub, third-party APIs) are **not** mocked here;
- *   you will need to provide your own doubles/stubs for those.
- * - All trigger invocations flow through `registerTriggerV1`/`registerTriggerV2`
- *   with a guard based on the orchestrator’s `suspended` state.
+ * - This module is designed for **unit/integration tests**. It replaces the emulator boot/deploy
+ *   loop with a fast, deterministic in-process environment.
+ * - Triggers are **enabled by default** after construction (equivalent to `orch.all(true)`).
+ * - External services (Pub/Sub, third-party APIs, etc.) are not mocked here—supply your own doubles.
+ * - All invocations flow through the package’s `v1/register-trigger` and `v2/register-trigger` shims.
+ *
+ * @packageDocumentation
  */
 
 /** Union of allowed keys used to identify triggers in the orchestrator. */
@@ -36,6 +48,8 @@ export type TriggerKey = string | number;
 
 /**
  * Aggregate counters for a given trigger key.
+ *
+ * @public
  */
 export interface TriggerStats<TKey extends TriggerKey> {
   /** The logical key used to identify this trigger. */
@@ -50,6 +64,8 @@ export interface TriggerStats<TKey extends TriggerKey> {
 
 /**
  * Extended trigger event argument that includes per-trigger statistics.
+ *
+ * @public
  */
 export interface TriggerEventExArg<TKey extends TriggerKey>
   extends TriggerEventArg,
@@ -59,11 +75,13 @@ export interface TriggerEventExArg<TKey extends TriggerKey>
  * Observer callbacks that can be attached to a single trigger key.
  *
  * @remarks
- * - `before` runs just prior to the Cloud Function invocation.
- * - `after` runs if the Cloud Function **fulfills**.
+ * - `before` runs immediately prior to the Cloud Function invocation.
+ * - `after` runs if the Cloud Function **fulfills** (no error thrown).
  * - `error` runs if the Cloud Function **throws/rejects**.
- * - If an observer callback throws, the exception is surfaced via
- *   {@link TriggerOrchestrator.watchErrors}.
+ * - If an observer throws, that exception is surfaced via
+ *   {@link TriggerOrchestrator.watchErrors | watchErrors()}.
+ *
+ * @public
  */
 export interface TriggerObserver<TKey extends TriggerKey> {
   before?: (arg: TriggerEventExArg<TKey>) => void;
@@ -72,67 +90,82 @@ export interface TriggerObserver<TKey extends TriggerKey> {
 }
 
 /**
- * Registrar passed to your setup function in the {@link TriggerOrchestrator}
- * constructor. Use it to register v1 and v2 handlers bound to keys.
+ * Registrar passed to your setup function in the {@link TriggerOrchestrator} constructor.
+ * Use it to register v1 and v2 Firestore trigger handlers and associate them with keys.
  *
- * @example
+ * @example Registering two handlers
  * ```ts
+ * enum AppTrigger {
+ *   OnTransactionWrite = 'OnTransactionWrite',
+ *   OnBudgetStructureCreate = 'OnBudgetStructureCreate',
+ * }
+ *
  * new TriggerOrchestrator<AppTrigger>(ctl, (r) => {
  *   r.v1(AppTrigger.OnTransactionWrite, onTransactionWriteV1);
  *   r.v2(AppTrigger.OnBudgetStructureCreate, onBudgetStructureCreateV2);
  * });
  * ```
+ *
+ * @public
  */
 export interface TriggerRegistrar<TKey extends TriggerKey> {
   /**
    * Registers a Cloud Functions **v1** Firestore handler for a key.
+   *
+   * @param key - The logical key used to address this handler.
+   * @param handler - The Cloud Functions v1 wrapper exported from `firebase-functions/v1`.
    */
-  v1(key: TKey, handler: CloudFunctionV1<TriggerPayloadV1>): void;
+  v1<T extends TriggerPayloadV1>(key: TKey, handler: CloudFunctionV1<T>): void;
 
   /**
    * Registers a Cloud Functions **v2** Firestore handler for a key.
+   *
+   * @param key - The logical key used to address this handler.
+   * @param handler - The Cloud Functions v2 wrapper exported from `firebase-functions/v2`.
    */
   v2<T>(key: TKey, handler: CloudFunctionV2<CloudEvent<T>>): void;
 }
 
 /**
- * Options controlling the behavior of a single {@link TriggerOrchestrator.waitOne}
- * or {@link TriggerOrchestrator.waitNext} waiter.
+ * Options controlling the behavior of a single waiter created by
+ * {@link TriggerOrchestrator.wait} or {@link TriggerOrchestrator.waitOne}.
+ *
+ * @public
  */
-export interface WaitOneOptions {
+export interface WaitOptions {
   /**
-   * If `true`, the waiter is rejected when the corresponding trigger run
-   * fails (throws/rejects). Default is `false`.
+   * If `true`, the waiter is **rejected** when a matching trigger run fails
+   * (throws/rejects) before its predicate can be satisfied. Defaults to `false`.
    */
   cancelOnError?: boolean;
 
   /**
-   * Timeout in milliseconds. Default is `3000`.
+   * Timeout in milliseconds before the waiter rejects with a timeout error.
+   * Defaults to `3000`.
    */
   timeout?: number;
 }
 
-/** Where a surfaced error originated. */
-export type TriggerErrorSource =
-  | 'observer-before'
-  | 'observer-after'
-  | 'observer-error'
-  | 'trigger';
-
 /**
- * Argument passed to error watchers registered via
+ * Argument passed to global error watchers registered via
  * {@link TriggerOrchestrator.watchErrors}.
+ *
+ * @public
  */
 export interface TriggerErrorEventArg<TKey extends TriggerKey> {
   /** Classification for where the error originated. */
-  source: TriggerErrorSource;
+  origin: TriggerErrorOrigin;
   /** The extended event argument for the failed/observed run. */
   arg: TriggerEventExArg<TKey>;
-  /** The underlying error/exception. */
+  /** The underlying error/exception (as thrown by the trigger or observer). */
   cause: unknown;
 }
 
-/** Callback signature for global error watchers. */
+/**
+ * Callback signature for global error watchers.
+ *
+ * @public
+ */
 export type TriggerErrorWatcher<TKey extends TriggerKey> = (
   arg: TriggerErrorEventArg<TKey>
 ) => void;
@@ -170,10 +203,15 @@ class WaitHandle<TKey extends TriggerKey> {
   /** When `true`, fail the waiter if a matching trigger run errors. */
   readonly cancelOnError: boolean;
 
+  /**
+   * @param stub - Internal trigger record to attach this waiter to.
+   * @param predicate - Predicate evaluated against each completed event.
+   * @param options - Timeout and cancellation behavior.
+   */
   constructor(
     private readonly stub: TriggerStub<TKey>,
     private readonly predicate: (arg: TriggerEventExArg<TKey>) => boolean,
-    options?: WaitOneOptions
+    options?: WaitOptions
   ) {
     const DEFAULT_TIMEOUT = 3000;
     this._expires = Date.now() + (options?.timeout ?? DEFAULT_TIMEOUT);
@@ -227,69 +265,59 @@ class WaitHandle<TKey extends TriggerKey> {
   }
 }
 
-interface HandlerResolver<TKey extends TriggerKey> {
-  source: TriggerErrorSource;
-  resolve(obs: TriggerObserver<TKey>): ObserverCallback<TKey> | undefined;
-}
-
-const OnBeforeResolver: HandlerResolver<TriggerKey> = {
-  source: 'observer-before',
-  resolve(
-    obs: TriggerObserver<TriggerKey>
-  ): ObserverCallback<TriggerKey> | undefined {
-    return obs.before;
-  },
-};
-
-const OnAfterResolver: HandlerResolver<TriggerKey> = {
-  source: 'observer-after',
-  resolve(
-    obs: TriggerObserver<TriggerKey>
-  ): ObserverCallback<TriggerKey> | undefined {
-    return obs.after;
-  },
-};
-
-const OnErrorResolver: HandlerResolver<TriggerKey> = {
-  source: 'observer-error',
-  resolve(
-    obs: TriggerObserver<TriggerKey>
-  ): ObserverCallback<TriggerKey> | undefined {
-    return obs.error;
-  },
-};
+type HandlerResolver<TKey extends TriggerKey> = (
+  obs: TriggerObserver<TKey>
+) => ObserverCallback<TKey> | undefined;
 
 /**
- * Coordinates Cloud Functions (v1/v2) trigger handlers over the in-memory
- * Firestore database, providing enable/disable controls, per-trigger stats,
- * observer hooks, and awaiting utilities for deterministic testing.
+ * Coordinates Cloud Functions (v1/v2) Firestore trigger handlers over the
+ * in-memory Firestore database, providing enable/disable controls, per-trigger
+ * stats, observer hooks, and awaiting utilities for deterministic testing.
  *
  * @typeParam TKey - The key type used to identify triggers (string or number).
  *
- * @example Basic setup
+ * @example Basic setup & enabling
  * ```ts
  * const orch = new TriggerOrchestrator<AppTrigger>(ctl, (r) => {
  *   r.v1(AppTrigger.OnTransactionWrite, onTransactionWriteV1);
  *   r.v2(AppTrigger.OnBudgetStructureCreate, onBudgetStructureCreateV2);
  * });
  *
- * // Ensure all triggers are enabled (default after construction)
+ * // Triggers are enabled by default, but you can make it explicit:
  * orch.all(true);
  * ```
  *
- * @example Wait for the next invocation
+ * @example Waiting for the next invocation
  * ```ts
- * const evt = await orch.waitNext(AppTrigger.OnTransactionWrite, { timeout: 2000 });
+ * // Wait up to 2s for the next successful run of the key
+ * const evt = await orch.waitOne(AppTrigger.OnTransactionWrite, { timeout: 2000 });
  * expect(evt.completedCount).toBeGreaterThan(0);
  * ```
  *
- * @example Observe successes and failures
+ * @example Predicate-based waits with cancel-on-error
+ * ```ts
+ * await orch.wait(
+ *   AppTrigger.OnTransactionWrite,
+ *   (e) => e.after?.exists === true, // any predicate against TriggerEventExArg
+ *   { timeout: 3000, cancelOnError: true }
+ * );
+ * ```
+ *
+ * @example Observing successes and failures
  * ```ts
  * const off = orch.on(AppTrigger.OnTransactionWrite, {
- *   after: (a) => console.log('ok', a.key, a.completedCount),
- *   error: (a, e) => console.warn('fail', a.key, e),
+ *   before: (a) => console.log('about to run', a.key, a.initiatedCount),
+ *   after:  (a) => console.log('ok', a.key, a.completedCount),
+ *   error:  (a, e) => console.warn('fail', a.key, e),
  * });
  * // later: off();
+ * ```
+ *
+ * @example Pausing all triggers (setup/teardown)
+ * ```ts
+ * orch.suspended = true;   // suppress new invocations at registration gate
+ * // ... setup test data ...
+ * orch.suspended = false;  // resume
  * ```
  */
 export class TriggerOrchestrator<TKey extends TriggerKey> {
@@ -306,11 +334,11 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
    *   calls `v1`/`v2` to associate handlers with keys.
    *
    * @remarks
-   * - On construction, all registered triggers are **enabled** by default via {@link all}(true).
-   * - Each registered handler is wrapped so that:
-   *   - It is gated by {@link suspended} (not invoked while suspended).
-   *   - It updates per-trigger stats.
-   *   - It notifies any observers and active waiters.
+   * - On construction, all registered triggers are **enabled** via {@link all}(true).
+   * - Each registered handler is wrapped so that it:
+   *   - Is gated by {@link suspended} (not invoked while suspended).
+   *   - Updates per-trigger stats.
+   *   - Notifies observers and active waiters.
    */
   constructor(
     ctrl: FirestoreController,
@@ -352,8 +380,8 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
               onAfter(arg) {
                 owner._onAfter(stub, arg);
               },
-              onError(arg, error) {
-                owner._onError(stub, arg, error);
+              onError(arg) {
+                owner._onError(stub, arg);
               },
             });
           },
@@ -390,7 +418,7 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
   }
 
   /**
-   * When `true`, suppresses **all** trigger invocations at the registration layer.
+   * When `true`, suppresses **all** trigger invocations at the registration gate.
    * Useful for test setup/teardown or to pause cascading side-effects.
    */
   get suspended(): boolean {
@@ -419,7 +447,8 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
   /**
    * Enables the specified triggers by key.
    *
-   * @throws Error if a key has not been registered.
+   * @param keys - One or more keys to enable.
+   * @throws Error if any key has not been registered.
    */
   enable(...keys: TKey[]): void {
     keys.forEach((k) => {
@@ -434,7 +463,8 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
   /**
    * Disables the specified triggers by key.
    *
-   * @throws Error if a key has not been registered.
+   * @param keys - One or more keys to disable.
+   * @throws Error if any key has not been registered.
    */
   disable(...keys: TKey[]): void {
     keys.forEach((k) => {
@@ -446,7 +476,11 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
     });
   }
 
-  /** Returns `true` if the specified trigger is currently enabled. */
+  /**
+   * Returns `true` if the specified trigger is currently enabled.
+   *
+   * @param trigger - The key to check.
+   */
   isEnabled(trigger: TKey): boolean {
     return this._stubs.get(trigger)?.active === true;
   }
@@ -454,6 +488,8 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
   /**
    * Returns immutable stats for a trigger key. If the key is unknown,
    * a zeroed stats object is returned.
+   *
+   * @param key - The key for which to fetch stats.
    */
   getStats(key: TKey): TriggerStats<TKey> {
     const stub = this._stubs.get(key);
@@ -473,15 +509,17 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
 
   /**
    * Register a global error watcher. The watcher is invoked for:
-   * - Failures thrown by the Cloud Function (`source: "trigger"`).
-   * - Exceptions thrown by any observer callback (`source: "observer-*"`)
    *
-   * @returns Unsubscribe function.
+   * - Failures thrown by the Cloud Function (`origin: "trigger"`).
+   * - Exceptions thrown by any observer callback (`origin: "observer-*"`).
+   *
+   * @param callback - The watcher to invoke on error.
+   * @returns Unsubscribe function to remove the watcher.
    *
    * @example
    * ```ts
-   * const off = orch.watchErrors(({ source, arg, cause }) => {
-   *   fail(`Unhandled error from ${source}: ${String(cause)}`);
+   * const off = orch.watchErrors(({ origin, arg, cause }) => {
+   *   fail(`Unhandled error from ${origin} for ${String(arg.key)}: ${String(cause)}`);
    * });
    * // later: off();
    * ```
@@ -503,6 +541,8 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
   /**
    * Attach an observer to a specific trigger key.
    *
+   * @param key - Trigger key to observe.
+   * @param observer - Observer callbacks.
    * @returns Unsubscribe function.
    *
    * @throws Error if the trigger key has not been registered.
@@ -518,7 +558,13 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
     };
   }
 
-  /** Alias of {@link observe}. */
+  /**
+   * Alias of {@link observe}.
+   *
+   * @param key - Trigger key to observe.
+   * @param observer - Observer callbacks.
+   * @returns Unsubscribe function.
+   */
   on(key: TKey, observer: TriggerObserver<TKey>): () => void {
     return this.observe(key, observer);
   }
@@ -528,14 +574,18 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
    * Resolves with the extended event argument, or rejects on timeout/cancel.
    *
    * @remarks
-   * - Use {@link waitNext} as a convenience when you don't need a predicate.
-   * - If `options.cancelOnError === true`, the waiter is rejected if a matching
+   * - Use {@link waitOne} for a simpler “next invocation” await with no predicate.
+   * - If `options.cancelOnError === true`, the waiter rejects if a matching
    *   run fails before the predicate can be satisfied.
+   *
+   * @param key - Trigger key to wait on.
+   * @param predicate - Match function evaluated on each completed event.
+   * @param options - Timeout and cancellation behavior.
    */
-  waitOne(
+  wait(
     key: TKey,
     predicate: (arg: TriggerEventExArg<TKey>) => boolean,
-    options?: WaitOneOptions
+    options?: WaitOptions
   ): Promise<TriggerEventExArg<TKey>> {
     const stub = this._stubs.get(key);
     if (!stub)
@@ -552,13 +602,12 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
   /**
    * Wait for the **next** event for the given key (no predicate).
    *
-   * @see waitOne
+   * @param key - Trigger key.
+   * @param options - Timeout and cancellation behavior.
+   * @see {@link wait}
    */
-  waitNext(
-    key: TKey,
-    options?: WaitOneOptions
-  ): Promise<TriggerEventExArg<TKey>> {
-    return this.waitOne(key, () => true, options);
+  waitOne(key: TKey, options?: WaitOptions): Promise<TriggerEventExArg<TKey>> {
+    return this.wait(key, () => true, options);
   }
 
   /**
@@ -567,6 +616,9 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
    * - Cancels all active waiters,
    * - Zeroes all counters,
    * - Re-enables all registered triggers.
+   *
+   * @remarks
+   * Stats are preserved only until this call; after reset they are zeroed.
    */
   reset(): void {
     this.detach();
@@ -579,7 +631,9 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
     });
   }
 
-  /** Enables all registered triggers (does not alter observers or waiters). */
+  /**
+   * Enables all registered triggers (does not alter observers or waiters).
+   */
   attach(): void {
     this.all(true);
   }
@@ -601,6 +655,7 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
 
   // --- Internals below here ---
 
+  /** Starts (if necessary) the interval that services waiter timeouts. */
   private ensureInterrupt(): void {
     const INTERVAL = 50;
     if (!this._interrupt) {
@@ -611,7 +666,7 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
             wh.tick(now);
           }
         });
-        // Clear interrupt if no wait handles remain
+        // Clear interval if no wait handles remain
         let count = 0;
         this._stubs.forEach((stub) => {
           count += stub.waitHandles.length;
@@ -625,6 +680,7 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
     }
   }
 
+  /** Clears the waiter timeout interval (if running). */
   private clearInterrupt(): void {
     if (this._interrupt) {
       clearInterval(this._interrupt);
@@ -632,14 +688,26 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
     }
   }
 
+  /** Internal hook invoked before the wrapped trigger handler executes. */
   private _onBefore(stub: TriggerStub<TKey>, arg: TriggerEventArg): void {
     stub.stats.initiatedCount += 1;
-    this.executeObservers(stub, arg, OnBeforeResolver);
+    this.executeObservers(
+      TriggerErrorOrigin.OnBefore,
+      stub,
+      arg,
+      (stub) => stub.before
+    );
   }
 
+  /** Internal hook invoked after the wrapped trigger handler fulfills. */
   private _onAfter(stub: TriggerStub<TKey>, arg: TriggerEventArg): void {
     stub.stats.completedCount += 1;
-    this.executeObservers(stub, arg, OnAfterResolver);
+    this.executeObservers(
+      TriggerErrorOrigin.OnAfter,
+      stub,
+      arg,
+      (stub) => stub.after
+    );
     if (!stub.waitHandles.length) return;
 
     const argEx = makeArgEx(stub, arg);
@@ -648,24 +716,35 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
     }
   }
 
+  /** Internal hook invoked when the wrapped trigger handler throws/rejects. */
   private _onError(
     stub: TriggerStub<TKey>,
-    arg: TriggerEventArg,
-    error: unknown
+    arg: TriggerRunnerErrorEventArg
   ): void {
     stub.stats.errorCount += 1;
-    this.executeObservers(stub, arg, OnErrorResolver, error);
+    this.executeObservers(
+      arg.origin,
+      stub,
+      arg.arg,
+      (stub) => stub.error,
+      arg.cause
+    );
     if (stub.waitHandles.length) {
       for (const wh of [...stub.waitHandles]) {
         if (wh.cancelOnError) {
-          wh.cancel(error);
+          wh.cancel(arg.cause);
         }
       }
     }
-    this.raiseGlobalError('trigger', makeArgEx(stub, arg), error);
+    this.raiseGlobalError(arg.origin, makeArgEx(stub, arg.arg), arg.cause);
   }
 
+  /**
+   * Executes the resolved observer callback and surfaces any thrown errors
+   * through {@link watchErrors}.
+   */
   private executeObservers(
+    origin: TriggerErrorOrigin,
     stub: TriggerStub<TKey>,
     arg: TriggerEventArg,
     resolver: HandlerResolver<TKey>,
@@ -675,7 +754,7 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
 
     let ex: TriggerEventExArg<TKey> | undefined;
     for (const obs of [...stub.observers]) {
-      const fn = resolver.resolve(obs);
+      const fn = resolver(obs);
       if (!fn) continue;
       if (!ex) {
         ex = makeArgEx(stub, arg);
@@ -683,21 +762,22 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
       try {
         fn(ex, error);
       } catch (e) {
-        this.raiseGlobalError(resolver.source, ex, e);
+        this.raiseGlobalError(origin, ex, e);
       }
     }
   }
 
+  /** Raises a global error event to all registered error watchers. */
   private raiseGlobalError(
-    source: TriggerErrorSource,
+    origin: TriggerErrorOrigin,
     arg: TriggerEventExArg<TKey>,
     cause: unknown
   ): void {
     if (!this._errorWatchers.size) return;
     const wArg: TriggerErrorEventArg<TKey> = {
+      origin,
       arg,
       cause,
-      source,
     };
 
     Object.freeze(wArg);
@@ -706,7 +786,7 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
       try {
         fn(wArg);
       } catch {
-        // noop
+        // Swallow watcher exceptions to avoid error loops.
       }
     });
   }

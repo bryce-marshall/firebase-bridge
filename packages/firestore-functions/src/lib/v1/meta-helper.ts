@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { FirestoreController } from '@firebase-bridge/firestore-admin';
 import { CloudFunction } from 'firebase-functions/v1';
-import { Kind, withFunctionsEnv } from '../_internal/util.js';
+import { CloudContext } from '../_internal/cloud-context.js';
+import { Kind } from '../_internal/util.js';
 
 export type TriggerMetaV1 = {
   route: string; // e.g. "users/{uid}/accounts/{aid}"
@@ -35,7 +36,7 @@ export function getTriggerMeta(
   context: FirestoreController,
   handler: CloudFunction<any>
 ): TriggerMetaV1 {
-  return withFunctionsEnv(context, () => {
+  return CloudContext.start(context, () => {
     const ep = getEndpointSafe(handler);
     const resource: string | undefined =
       ep?.eventTrigger?.eventFilters?.resource;

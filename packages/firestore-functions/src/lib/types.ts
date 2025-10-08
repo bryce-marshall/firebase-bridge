@@ -1,5 +1,18 @@
 import { TriggerEventArg } from '@firebase-bridge/firestore-admin';
 
+export enum TriggerErrorOrigin {
+  Predicate,
+  OnBefore,
+  Execute,
+  OnAfter,
+}
+
+export interface TriggerRunnerErrorEventArg {
+  origin: TriggerErrorOrigin;
+  arg: TriggerEventArg;
+  cause: unknown;
+}
+
 /**
  * Optional hooks that refine how a Firestore trigger is invoked when using
  * {@link registerTrigger} for both **v1** (`firebase-functions/v1`) and **v2**
@@ -99,5 +112,5 @@ export interface RegisterTriggerOptions {
    * @param arg - Event context corresponding to the failed invocation.
    * @param error - The error thrown/rejected by the handler.
    */
-  onError?(arg: TriggerEventArg, error: unknown): void;
+  onError?(arg: TriggerRunnerErrorEventArg): void;
 }

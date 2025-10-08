@@ -1,6 +1,7 @@
 import { FirestoreController } from '@firebase-bridge/firestore-admin';
 import type { CloudEvent, CloudFunction } from 'firebase-functions/v2';
-import { Kind, withFunctionsEnv } from '../_internal/util.js';
+import { CloudContext } from '../_internal/cloud-context.js';
+import { Kind } from '../_internal/util.js';
 
 /**
  * Metadata describing a Firestore v2 trigger that we care about for routing.
@@ -182,7 +183,7 @@ export function getTriggerMetaV2(
   ctrl: FirestoreController,
   handler: CloudFunction<CloudEvent<unknown>>
 ): TriggerMetaV2 {
-  return withFunctionsEnv(ctrl, () => {
+  return CloudContext.start(ctrl, () => {
     const ep = getEndpointSafe(handler);
     const et = ep?.eventTrigger;
     if (!et)

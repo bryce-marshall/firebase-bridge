@@ -103,61 +103,51 @@ export function changeKind(m: MetaDocument): Kind | undefined {
   }
 }
 
-/**
- * Executes a function within a **minimal Cloud Functions-like environment**,
- * setting environment variables commonly read by the Functions SDK:
- * `GOOGLE_CLOUD_PROJECT`, `GCLOUD_PROJECT`, and `FIREBASE_CONFIG`.
- *
- * Environment variables are restored to their previous values after `run`
- * completes (successfully or with an error).
- *
- * @typeParam T - Return type of the `run` callback.
- * @param ctx - Controller providing `projectId` and `databaseId`.
- * @param run - Function to execute under the temporary environment.
- * @returns The result of `run()`.
- *
- * @example
- * const result = withFunctionsEnv(controller, () => handler.run(payload, ctx));
- */
-export function withFunctionsEnv<T>(ctx: FirestoreController, run: () => T): T {
-  const keys = [
-    'GOOGLE_CLOUD_PROJECT',
-    'GCLOUD_PROJECT',
-    'FIREBASE_CONFIG',
-  ] as const;
-  const prev: Record<string, string | undefined> = {};
-  for (const k of keys) prev[k] = process.env[k];
+// /**
+//  * Executes a function within a **minimal Cloud Functions-like environment**,
+//  * setting environment variables commonly read by the Functions SDK:
+//  * `GOOGLE_CLOUD_PROJECT`, `GCLOUD_PROJECT`, and `FIREBASE_CONFIG`.
+//  *
+//  * Environment variables are restored to their previous values after `run`
+//  * completes (successfully or with an error).
+//  *
+//  * @typeParam T - Return type of the `run` callback.
+//  * @param ctx - Controller providing `projectId` and `databaseId`.
+//  * @param run - Function to execute under the temporary environment.
+//  * @returns The result of `run()`.
+//  *
+//  * @example
+//  * const result = withFunctionsEnv(controller, () => handler.run(payload, ctx));
+//  */
+// export function withFunctionsEnv<T>(ctx: FirestoreController, run: () => T): T {
+//   const keys = [
+//     'GOOGLE_CLOUD_PROJECT',
+//     'GCLOUD_PROJECT',
+//     'FIREBASE_CONFIG',
+//   ] as const;
+//   const prev: Record<string, string | undefined> = {};
+//   for (const k of keys) prev[k] = process.env[k];
 
-  const projectId = ctx.projectId;
-  const databaseId = ctx.databaseId;
-  Object.assign(process.env, {
-    GOOGLE_CLOUD_PROJECT: projectId,
-    GCLOUD_PROJECT: projectId,
-    FIREBASE_CONFIG: JSON.stringify({ projectId, databaseId }),
-  });
+//   const projectId = ctx.projectId;
+//   const databaseId = ctx.databaseId;
+//   Object.assign(process.env, {
+//     GOOGLE_CLOUD_PROJECT: projectId,
+//     GCLOUD_PROJECT: projectId,
+//     FIREBASE_CONFIG: JSON.stringify({ projectId, databaseId }),
+//   });
 
-  try {
-    return run();
-  } finally {
-    for (const k of keys) {
-      if (prev[k] === undefined) {
-        delete process.env[k];
-      } else {
-        process.env[k] = prev[k];
-      }
-    }
-  }
-}
 
-// export interface PartialChangeRecord {
-//   kind?: Kind;
-//   before?: AdminDocSnap;
-//   after?: AdminDocSnap;
-// }
-
-// export interface UniChangeRecord extends PartialChangeRecord {
-//   kind: 'create';
-//   after: AdminDocSnap;
+//   try {
+//     return run();
+//   } finally {
+//     for (const k of keys) {
+//       if (prev[k] === undefined) {
+//         delete process.env[k];
+//       } else {
+//         process.env[k] = prev[k];
+//       }
+//     }
+//   }
 // }
 
 export interface ChangeRecord {
@@ -305,17 +295,12 @@ function isEqual(
   );
 }
 
-// export type GenericTriggerEventData = Omit<
-//   firestoreV2.FirestoreEvent<unknown>,
-//   'data'
-// >;
-
-export type V2ClountEventData =
+export type V2CloudEventData =
   | Change<firestoreV2.DocumentSnapshot>
   | firestoreV2.DocumentSnapshot
   | firestoreV2.QueryDocumentSnapshot;
 
-export type V2CloudEvent = firestoreV2.FirestoreEvent<V2ClountEventData>;
+export type V2CloudEvent = firestoreV2.FirestoreEvent<V2CloudEventData>;
 
 export type GenericTriggerEventData = firestoreV2.FirestoreEvent<unknown>;
 
@@ -353,7 +338,7 @@ export function buildCloudEvent(
   after: DocumentSnapshot
 ): GenericTriggerEventData {
   let type: string;
-  let data: V2ClountEventData;
+  let data: V2CloudEventData;
 
   switch (emitKind) {
     case 'create':
@@ -397,4 +382,11 @@ export function buildCloudEvent(
   };
 
   return event;
+}
+
+export function runUnavailableMsg(version: 'v1' | 'v2'): string {
+  return (
+    'CloudFunction.run() not available. Pass the exported CloudFunction wrapper ' +
+    `from firebase-functions/${version} (not the raw handler), or upgrade firebase-functions.`
+  );
 }

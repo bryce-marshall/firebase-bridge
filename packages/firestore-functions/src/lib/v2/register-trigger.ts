@@ -3,14 +3,15 @@ import {
   FirestoreController,
   TriggerEventArg,
 } from '@firebase-bridge/firestore-admin';
-import { DocumentSnapshot } from 'firebase-admin/firestore';
-import type { CloudFunction } from 'firebase-functions/v2';
-import { RegisterTriggerOptions } from '../_internal/types.js';
+import type { CloudEvent, CloudFunction } from 'firebase-functions/v2';
 import {
-  buildCloudEvent,
-  Kind,
-  toChangeRecord,
-  withFunctionsEnv,
+  GenericTriggerMeta,
+  TriggerRunner,
+} from '../_internal/trigger-runner.js';
+import { RegisterTriggerOptions } from '../types.js';
+import {
+  GenericTriggerEventData,
+  runUnavailableMsg,
 } from '../_internal/util.js';
 import { getTriggerMetaV2 } from './meta-helper.js';
 
@@ -56,45 +57,31 @@ import { getTriggerMetaV2 } from './meta-helper.js';
  * // ... perform writes in tests ...
  * dispose(); // clean up
  */
-export function registerTrigger(
+export function registerTrigger<T extends CloudEvent<unknown>>(
   target: FirestoreController,
-  handler: CloudFunction<any>,
+  handler: CloudFunction<T>,
   options?: RegisterTriggerOptions
 ): () => void {
   if (typeof handler.run !== 'function') {
-    throw new Error(
-      'CloudFunction.run() not available. Pass the exported CloudFunction wrapper ' +
-        'from firebase-functions/v2 (not the raw handler), or upgrade firebase-functions.'
-    );
+    throw new Error(runUnavailableMsg('v2'));
   }
 
-  const { route, kinds } = getTriggerMetaV2(target, handler);
+  const runner = new (class extends TriggerRunner<CloudFunction<T>> {
+    override getTriggerMeta(
+      target: FirestoreController,
+      handler: CloudFunction<any>
+    ): GenericTriggerMeta {
+      return getTriggerMetaV2(target, handler);
+    }
 
-  return target.database.registerTrigger({
-    route,
-    callback: async (arg: TriggerEventArg) => {
-      if ((options?.predicate?.(arg) ?? true) !== true) return;
+    override run(
+      handler: CloudFunction<T>,
+      _arg: TriggerEventArg,
+      data: GenericTriggerEventData
+    ): unknown {
+      return handler.run(data as unknown as T);
+    }
+  })(target, handler, options);
 
-      type EmitKind = Kind | 'write';
-      const firestore = target.firestore();
-      const rec = toChangeRecord(firestore, arg.doc);
-      if (!rec?.kind) return; // ignore no-op writes
-      const emitKind: EmitKind = kinds[0] === 'write' ? 'write' : rec.kind;
-      if (emitKind !== 'write' && !kinds.includes(emitKind)) return;
-
-      const ce = buildCloudEvent(
-        target,
-        emitKind,
-        arg,
-        rec.before as DocumentSnapshot,
-        rec.after as DocumentSnapshot
-      );
-
-      const fn: any = handler;
-      if (typeof fn.run === 'function') {
-        return withFunctionsEnv(target, () => fn.run(ce));
-      }
-      return withFunctionsEnv(target, () => fn(ce));
-    },
-  });
+  return runner.unsub;
 }

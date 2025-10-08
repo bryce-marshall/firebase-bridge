@@ -7,13 +7,15 @@ import {
   QueryDocumentSnapshot,
 } from 'firebase-admin/firestore';
 import { Change, CloudFunction, EventContext } from 'firebase-functions/v1';
-import { RegisterTriggerOptions } from '../_internal/types.js';
 import {
-  buildCloudEvent,
-  Kind,
-  toChangeRecord,
-  toFirestorePath,
-  withFunctionsEnv,
+  GenericTriggerMeta,
+  TriggerRunner,
+} from '../_internal/trigger-runner.js';
+import { RegisterTriggerOptions } from '../types.js';
+import {
+  GenericTriggerEventData,
+  runUnavailableMsg,
+  toFirestorePath
 } from '../_internal/util.js';
 import { getTriggerMeta } from './meta-helper.js';
 
@@ -76,53 +78,43 @@ export type TriggerPayload =
  * dispose(); // clean up
  */
 export function registerTrigger<
-  T extends TriggerPayload = Change<DocumentSnapshot> // onDelete
+  T extends TriggerPayload = Change<DocumentSnapshot>
 >(
   target: FirestoreController,
   handler: CloudFunction<T>,
   options?: RegisterTriggerOptions
 ): () => void {
   if (typeof handler.run !== 'function') {
-    throw new Error(
-      'CloudFunction.run() not available. Pass the exported CloudFunction wrapper ' +
-        'from firebase-functions/v1 (not the raw handler), or upgrade firebase-functions.'
-    );
+    throw new Error(runUnavailableMsg('v1'));
   }
-  const { route, kinds } = getTriggerMeta(target, handler); // merged meta
 
-  return target.database.registerTrigger({
-    route,
-    callback: async (arg: TriggerEventArg) => {
-      if ((options?.predicate?.(arg) ?? true) !== true) return;
+  const runner = new (class extends TriggerRunner<CloudFunction<T>> {
+    override getTriggerMeta(
+      target: FirestoreController,
+      handler: CloudFunction<T>
+    ): GenericTriggerMeta {
+      return getTriggerMeta(target, handler);
+    }
 
-      type EmitKind = Kind | 'write';
-      const firestore = target.firestore();
-      const rec = toChangeRecord(firestore, arg.doc);
-      if (!rec?.kind) return; // ignore no-op writes
-      const emitKind: EmitKind = kinds[0] === 'write' ? 'write' : rec.kind;
-      if (emitKind !== 'write' && !kinds.includes(emitKind)) return;
-
-      const ce = buildCloudEvent(
-        target,
-        emitKind,
-        arg,
-        rec.before as DocumentSnapshot,
-        rec.after as DocumentSnapshot
-      );
-
+    override run(
+      handler: CloudFunction<T>,
+      arg: TriggerEventArg,
+      data: GenericTriggerEventData
+    ): unknown {
       const ctx: EventContext = {
-        eventId: ce.id,
-        eventType: ce.type,
-        timestamp: ce.time,
-        params: ce.params,
+        eventId: data.id,
+        eventType: data.type,
+        timestamp: data.time,
+        params: data.params,
         resource: {
           service: 'firestore.googleapis.com',
           name: toFirestorePath(target, arg.doc.path),
         },
       };
 
-      // Do we need to await for prod-like completion semantics?
-      return withFunctionsEnv(target, () => handler.run(ce.data as T, ctx));
-    },
-  });
+      return handler.run(data.data as T, ctx);
+    }
+  })(target, handler, options);
+
+  return runner.unsub;
 }
