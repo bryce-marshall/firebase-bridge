@@ -163,6 +163,7 @@ A handle to a **single logical database** (identified by `projectId` and `databa
 * `firestore(settings?: Settings): Firestore`
   Create a **Firestore Admin SDK** instance **scoped** to this database.
 * `exists(): boolean` – whether the database still exists.
+* `version(): number` – The monotonically increasing atomic commit version of the database.
 * `delete(): void` – delete this database; subsequent calls (besides `exists()`/`reset()`) throw.
 * `reset(): void` – clear documents & stats but keep the DB alive.
 * `getStats(): FirestoreMockStats` – current cumulative stats snapshot.

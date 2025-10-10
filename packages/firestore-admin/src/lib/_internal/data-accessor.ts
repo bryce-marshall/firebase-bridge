@@ -40,7 +40,6 @@ import {
   PathDataProvider,
   PathType,
 } from './path.js';
-import { object } from 'firebase-functions/v1/storage';
 
 const MILLIS_PER_SECOND = 1000;
 const SIXTY_SECONDS = MILLIS_PER_SECOND * 60;
@@ -830,6 +829,15 @@ export class DataAccessor implements PathDataProvider {
   constructor(config: DatabaseConfig) {
     this.serverTime = config.serverTime;
     this._txs = new TransactionManager(this);
+  }
+
+  /**
+   * The monotonically increasing atomic commit version (increments with each atomic `batchWrite`).
+   * Each document change (create/update/delete) carries the version associated with its corresponding
+   * `batchWrite`.
+   */
+  get version(): number {
+    return this._version;
   }
 
   /**

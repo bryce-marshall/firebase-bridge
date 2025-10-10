@@ -12,8 +12,8 @@ describe('v1 TriggerOrchestrator tests', () => {
   // --- v1 Trigger: users/{uid} onWrite ---
   const onUserWrite = v1.firestore
     .document(Helpers.PATH_USERS)
-    .onWrite((change, context) => {
-      Helpers.onUserWriteHandler(firestore, {
+    .onWrite(async (change, context) => {
+      await Helpers.onUserWriteHandler(firestore, {
         before: change.before.exists
           ? (change.before.data() as Helpers.UserDoc)
           : undefined,
@@ -27,8 +27,8 @@ describe('v1 TriggerOrchestrator tests', () => {
   // --- v1 Trigger: posts/{postId} onCreate ---
   const onPostCreate = v1.firestore
     .document(Helpers.PATH_POSTS)
-    .onCreate((snap, context) => {
-      Helpers.onPostCreateHandler(firestore, snap.data() as Helpers.PostDoc, {
+    .onCreate(async (snap, context) => {
+      await Helpers.onPostCreateHandler(firestore, snap.data() as Helpers.PostDoc, {
         params: context.params,
       });
     });
@@ -36,8 +36,8 @@ describe('v1 TriggerOrchestrator tests', () => {
   // --- v1 Trigger: posts/{postId}/comments/{commentId} onWrite ---
   const onCommentWrite = v1.firestore
     .document(Helpers.PATH_COMMENTS)
-    .onWrite((change, context) => {
-      Helpers.onCommentWriteHandler(firestore, {
+    .onWrite(async (change, context) => {
+      await Helpers.onCommentWriteHandler(firestore, {
         before: change.before.exists
           ? (change.before.data() as Helpers.CommentDoc)
           : undefined,

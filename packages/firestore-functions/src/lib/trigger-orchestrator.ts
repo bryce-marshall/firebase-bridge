@@ -7,12 +7,12 @@ import {
   CloudEvent,
   CloudFunction as CloudFunctionV2,
 } from 'firebase-functions/v2';
+import { } from './_internal/util.js';
 import {
   RegisterTriggerOptions,
   TriggerErrorOrigin,
   TriggerRunnerErrorEventArg,
 } from './types.js';
-import { } from './_internal/util.js';
 import {
   TriggerPayload as TriggerPayloadV1,
   registerTrigger as registerTriggerV1,
@@ -190,16 +190,17 @@ interface TriggerStub<TKey extends TriggerKey> {
     errorCount: number;
   };
   observers: TriggerObserver<TKey>[];
-  waitHandles: WaitHandle<TKey>[];
+  waitHandles: WaitHandle<TKey, TriggerEventExArg<TKey>>[];
+  errorWaitHandles: WaitHandle<TKey, TriggerErrorEventArg<TKey>>[];
 }
 
-class WaitHandle<TKey extends TriggerKey> {
+class WaitHandle<TKey extends TriggerKey, TArg> {
   private _expires: number;
-  private _resolve!: (arg: TriggerEventExArg<TKey>) => void;
+  private _resolve!: (arg: TArg) => void;
   private _reject!: (reason: Error) => void;
 
   /** Promise that resolves when the predicate matches or rejects on timeout/cancel. */
-  readonly promise: Promise<TriggerEventExArg<TKey>>;
+  readonly promise: Promise<TArg>;
   /** When `true`, fail the waiter if a matching trigger run errors. */
   readonly cancelOnError: boolean;
 
@@ -209,27 +210,24 @@ class WaitHandle<TKey extends TriggerKey> {
    * @param options - Timeout and cancellation behavior.
    */
   constructor(
-    private readonly stub: TriggerStub<TKey>,
-    private readonly predicate: (arg: TriggerEventExArg<TKey>) => boolean,
+    private readonly set: WaitHandle<TKey, TArg>[],
+    private readonly predicate: (arg: TArg) => boolean,
     options?: WaitOptions
   ) {
     const DEFAULT_TIMEOUT = 3000;
     this._expires = Date.now() + (options?.timeout ?? DEFAULT_TIMEOUT);
     this.cancelOnError = options?.cancelOnError === true;
-    this.promise = new Promise<TriggerEventExArg<TKey>>(
-      (
-        resolve: (arg: TriggerEventExArg<TKey>) => void,
-        reject: (reason: Error) => void
-      ) => {
+    this.promise = new Promise<TArg>(
+      (resolve: (arg: TArg) => void, reject: (reason: Error) => void) => {
         this._resolve = resolve;
         this._reject = reject;
       }
     );
-    stub.waitHandles.push(this);
+    set.push(this);
   }
 
   /** Evaluate the waiter against an event; resolve if the predicate matches. */
-  eval(arg: TriggerEventExArg<TKey>): void {
+  eval(arg: TArg): void {
     try {
       if (this.predicate(arg)) {
         this.remove();
@@ -258,9 +256,9 @@ class WaitHandle<TKey extends TriggerKey> {
   }
 
   private remove(): void {
-    const idx = this.stub.waitHandles.indexOf(this);
+    const idx = this.set.indexOf(this);
     if (idx >= 0) {
-      this.stub.waitHandles.splice(idx, 1);
+      this.set.splice(idx, 1);
     }
   }
 }
@@ -396,6 +394,7 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
           },
           observers: [],
           waitHandles: [],
+          errorWaitHandles: [],
         };
 
         map.set(key, stub);
@@ -427,7 +426,7 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
 
   /** Sets {@link suspended}. */
   set suspended(value: boolean) {
-    this._suspended = value === true;
+    this._suspended = !!value;
   }
 
   /**
@@ -493,18 +492,21 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
    */
   getStats(key: TKey): TriggerStats<TKey> {
     const stub = this._stubs.get(key);
-    if (stub?.stats)
-      return {
-        key,
-        ...stub.stats,
-      };
+    const stats = stub?.stats
+      ? {
+          key,
+          ...stub.stats,
+        }
+      : {
+          key,
+          completedCount: 0,
+          errorCount: 0,
+          initiatedCount: 0,
+        };
 
-    return {
-      key,
-      completedCount: 0,
-      errorCount: 0,
-      initiatedCount: 0,
-    };
+    Object.freeze(stats);
+
+    return stats;
   }
 
   /**
@@ -587,16 +589,12 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
     predicate: (arg: TriggerEventExArg<TKey>) => boolean,
     options?: WaitOptions
   ): Promise<TriggerEventExArg<TKey>> {
-    const stub = this._stubs.get(key);
-    if (!stub)
-      return Promise.reject(
-        new Error(waitHandleMsg(handlerNotRegistered(key)))
-      );
-
-    const wh = new WaitHandle(stub, predicate, options);
-    this.ensureInterrupt();
-
-    return wh.promise;
+    return this.registerWaitHandle(
+      key,
+      predicate,
+      (stub) => stub.waitHandles,
+      options
+    );
   }
 
   /**
@@ -608,6 +606,26 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
    */
   waitOne(key: TKey, options?: WaitOptions): Promise<TriggerEventExArg<TKey>> {
     return this.wait(key, () => true, options);
+  }
+
+  waitError(
+    key: TKey,
+    predicate: (arg: TriggerErrorEventArg<TKey>) => boolean,
+    options?: WaitOptions
+  ): Promise<TriggerErrorEventArg<TKey>> {
+    return this.registerWaitHandle(
+      key,
+      predicate,
+      (stub) => stub.errorWaitHandles,
+      options
+    );
+  }
+
+  waitOneError(
+    key: TKey,
+    options?: WaitOptions
+  ): Promise<TriggerErrorEventArg<TKey>> {
+    return this.waitError(key, () => true, options);
   }
 
   /**
@@ -643,33 +661,63 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
    * waiters. Does **not** clear stats.
    */
   detach(): void {
+    function cancelWaitHandles<T>(set: WaitHandle<TKey, T>[]): void {
+      for (const wh of [...set]) {
+        wh.cancel();
+      }
+    }
     this.clearInterrupt();
     this._stubs.forEach((stub) => {
       stub.observers.length = 0;
       stub.unsub();
-      for (const wh of [...stub.waitHandles]) {
-        wh.cancel();
-      }
+      cancelWaitHandles(stub.waitHandles);
+      cancelWaitHandles(stub.errorWaitHandles);
     });
   }
 
   // --- Internals below here ---
 
+  private registerWaitHandle<TArg>(
+    key: TKey,
+    predicate: (arg: TArg) => boolean,
+    setResolver: (stub: TriggerStub<TKey>) => WaitHandle<TKey, TArg>[],
+    options?: WaitOptions
+  ): Promise<TArg> {
+    const stub = this._stubs.get(key);
+    if (!stub)
+      return Promise.reject(
+        new Error(waitHandleMsg(handlerNotRegistered(key)))
+      );
+
+    const set = setResolver(stub);
+
+    const wh = new WaitHandle(set, predicate, options);
+    this.ensureInterrupt();
+
+    return wh.promise;
+  }
+
   /** Starts (if necessary) the interval that services waiter timeouts. */
   private ensureInterrupt(): void {
-    const INTERVAL = 50;
+    function tick<T>(now: number, set: WaitHandle<TKey, T>[]): void {
+      for (const wh of [...set]) {
+        wh.tick(now);
+      }
+    }
+
+    const INTERVAL = 5;
     if (!this._interrupt) {
       const t = setInterval(() => {
         const now = Date.now();
         this._stubs.forEach((stub) => {
-          for (const wh of [...stub.waitHandles]) {
-            wh.tick(now);
-          }
+          tick(now, stub.waitHandles);
+          tick(now, stub.errorWaitHandles);
         });
         // Clear interval if no wait handles remain
         let count = 0;
         this._stubs.forEach((stub) => {
           count += stub.waitHandles.length;
+          count += stub.errorWaitHandles.length;
         });
         if (count === 0) {
           this.clearInterrupt();
@@ -736,7 +784,16 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
         }
       }
     }
-    this.raiseGlobalError(arg.origin, makeArgEx(stub, arg.arg), arg.cause);
+
+    const argEx = makeArgEx(stub, arg.arg);
+    this.raiseGlobalError(arg.origin, argEx, arg.cause);
+
+    if (!stub.errorWaitHandles.length) return;
+
+    const eArg = makeErrorArg(arg.origin, argEx, arg.cause);
+    for (const wh of [...stub.errorWaitHandles]) {
+      wh.eval(eArg);
+    }
   }
 
   /**
@@ -774,22 +831,32 @@ export class TriggerOrchestrator<TKey extends TriggerKey> {
     cause: unknown
   ): void {
     if (!this._errorWatchers.size) return;
-    const wArg: TriggerErrorEventArg<TKey> = {
-      origin,
-      arg,
-      cause,
-    };
-
-    Object.freeze(wArg);
+    const eArg = makeErrorArg(origin, arg, cause);
 
     this._errorWatchers.forEach((fn) => {
       try {
-        fn(wArg);
+        fn(eArg);
       } catch {
         // Swallow watcher exceptions to avoid error loops.
       }
     });
   }
+}
+
+function makeErrorArg<TKey extends TriggerKey>(
+  origin: TriggerErrorOrigin,
+  arg: TriggerEventExArg<TKey>,
+  cause: unknown
+): TriggerErrorEventArg<TKey> {
+  const eArg: TriggerErrorEventArg<TKey> = {
+    origin,
+    arg,
+    cause,
+  };
+
+  Object.freeze(eArg);
+
+  return eArg;
 }
 
 function makeArgEx<TKey extends TriggerKey>(

@@ -3,17 +3,17 @@ import {
   TriggerEventArg,
 } from '@firebase-bridge/firestore-admin';
 import { DocumentSnapshot } from 'firebase-admin/firestore';
-import { CloudContext } from './cloud-context.js';
 import {
   RegisterTriggerOptions,
   TriggerErrorOrigin,
   TriggerRunnerErrorEventArg,
 } from '../types.js';
+import { CloudContext } from './cloud-context.js';
 import {
   buildCloudEvent,
   GenericTriggerEventData,
   Kind,
-  toChangeRecord
+  toChangeRecord,
 } from './util.js';
 
 export interface GenericTriggerMeta {
@@ -74,18 +74,24 @@ export abstract class TriggerRunner<THandler> {
 
           // Wrap the process in minimal Cloud Functions-like environment variables when executing (resets after)
           CloudContext.start(target, async () => {
+            // console.log('Inside CloudContext.start run callback');
             try {
               origin = TriggerErrorOrigin.OnBefore;
               opt.onBefore?.(arg);
               origin = TriggerErrorOrigin.Execute;
+              // console.log('*** before run');
               await this.run(handler, arg, data);
+              this.checkpoint();
+              // console.log('*** after run');
               origin = TriggerErrorOrigin.OnAfter;
               opt.onAfter?.(arg);
             } catch (cause) {
+              // console.log('*** 1. caught error', cause);
               emitError(cause);
             }
           });
         } catch (cause) {
+          // console.log('*** 2. caught error', cause);
           emitError(cause);
         }
       },
@@ -102,4 +108,6 @@ export abstract class TriggerRunner<THandler> {
     arg: TriggerEventArg,
     data: GenericTriggerEventData
   ): unknown | Promise<unknown>;
+
+  abstract checkpoint(): void;
 }

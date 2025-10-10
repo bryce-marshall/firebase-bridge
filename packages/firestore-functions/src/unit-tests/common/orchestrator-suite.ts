@@ -1,18 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-    FirestoreController,
-    FirestoreMock,
+  FirestoreController,
+  FirestoreMock,
 } from '@firebase-bridge/firestore-admin';
-import { Firestore } from 'firebase-admin/firestore';
+import { FieldValue, Firestore } from 'firebase-admin/firestore';
 import { TriggerOrchestrator } from '../../lib/trigger-orchestrator.js';
 import { TriggerErrorOrigin } from '../../lib/types.js';
 import {
-    AppTrigger,
-    ERR_POST_CREATE_MISSING_TITLE,
-    ERR_USER_WRITE_FAIL,
-    PATH_AUDIT_COMMENT,
-    PATH_WELCOME_POST,
-    SEED_COMMENT_ID
+  AppTrigger,
+  ERR_POST_CREATE_MISSING_TITLE,
+  ERR_USER_WRITE_FAIL,
+  PATH_AUDIT_COMMENT,
+  PATH_WELCOME_POST,
+  SEED_COMMENT_ID,
 } from './orchestration-helpers.js';
 
 type Ctx = {
@@ -86,6 +86,10 @@ export function orchestratorTestSuite(
       ctx = { version, env, ctrl, db: firestore, orch: triggers };
     });
 
+    afterAll(() => {
+      ctrl.delete();
+    });
+
     // ───────────────────────────────── A. Construction & Registration ─────────────────────────────────
 
     it('A1: handlers are enabled by default', async () => {
@@ -106,18 +110,19 @@ export function orchestratorTestSuite(
       expect(ctor).toThrow(/Duplicate trigger key/i);
     });
 
-    // ───────────────────────────────── B. Enable / Disable ─────────────────────────────────
+    // // ───────────────────────────────── B. Enable / Disable ─────────────────────────────────
 
     it('B3: enable() turns a disabled trigger back on', async () => {
       ctx.orch.disable(AppTrigger.OnUserWrite);
       expect(ctx.orch.isEnabled(AppTrigger.OnUserWrite)).toBe(false);
+      await sleep();
 
       ctx.orch.enable(AppTrigger.OnUserWrite);
       expect(ctx.orch.isEnabled(AppTrigger.OnUserWrite)).toBe(true);
 
       const s0 = statsFor(ctx.orch, AppTrigger.OnUserWrite);
-      await writeUser(ctx.db, 'u1', { ok: true });
-      await sleep();
+      writeUser(ctx.db, 'u1', { ok: true });
+      await ctx.orch.waitOne(AppTrigger.OnUserWrite);
       const s1 = statsFor(ctx.orch, AppTrigger.OnUserWrite);
       expect(s1.initiated).toBe(s0.initiated + 1);
       expect(s1.completed).toBe(s0.completed + 1);
@@ -179,8 +184,8 @@ export function orchestratorTestSuite(
 
     it('D8: initiated/completed increment on success', async () => {
       const s0 = statsFor(ctx.orch, AppTrigger.OnUserWrite);
-      await writeUser(ctx.db, 'u4', { ok: true });
-      await sleep();
+      writeUser(ctx.db, 'u4', { ok: true });
+      await ctx.orch.waitOne(AppTrigger.OnUserWrite);
       const s1 = statsFor(ctx.orch, AppTrigger.OnUserWrite);
       expect(s1.initiated).toBe(s0.initiated + 1);
       expect(s1.completed).toBe(s0.completed + 1);
@@ -190,7 +195,7 @@ export function orchestratorTestSuite(
     it('D9: initiated/error increment on failure', async () => {
       const s0 = statsFor(ctx.orch, AppTrigger.OnUserWrite);
       await writeUser(ctx.db, 'u5', { ok: false });
-      await sleep();
+      await triggers.waitOneError(AppTrigger.OnUserWrite);
       const s1 = statsFor(ctx.orch, AppTrigger.OnUserWrite);
       expect(s1.initiated).toBe(s0.initiated + 1);
       expect(s1.errors).toBe(s0.errors + 1);
@@ -388,11 +393,16 @@ export function orchestratorTestSuite(
     it('G23: wait resolves when predicate passes', async () => {
       const p = ctx.orch.wait(
         AppTrigger.OnUserWrite,
-        (e) => e.completedCount >= 2,
-        { timeout: 2000 }
+        (e) => e.completedCount >= 2
       );
-      await writeUser(ctx.db, 'u18', { ok: true });
-      await writeUser(ctx.db, 'u18', { ok: true });
+      await writeUser(ctx.db, 'u18', {
+        ok: true,
+        timstamp: FieldValue.serverTimestamp(),
+      });
+      await writeUser(ctx.db, 'u18', {
+        ok: true,
+        timstamp: FieldValue.serverTimestamp(),
+      });
       const ev = await p;
       expect(ev.completedCount).toBeGreaterThanOrEqual(2);
     });
@@ -404,6 +414,10 @@ export function orchestratorTestSuite(
     });
 
     it('G25: wait rejects if predicate throws', async () => {
+      writeUser(ctx.db, 'u18', {
+        ok: true,
+      });
+
       await expect(
         ctx.orch.wait(AppTrigger.OnUserWrite, () => {
           throw new Error('boom');
@@ -412,11 +426,10 @@ export function orchestratorTestSuite(
     });
 
     it('G26: cancelOnError=true rejects waiter on failure', async () => {
-      const p = ctx.orch.wait(
-        AppTrigger.OnUserWrite,
-        () => false,
-        { cancelOnError: true, timeout: 1000 }
-      );
+      const p = ctx.orch.wait(AppTrigger.OnUserWrite, () => false, {
+        cancelOnError: true,
+        timeout: 1000,
+      });
       await writeUser(ctx.db, 'u19', { ok: false });
       await expect(p).rejects.toThrow(/WaitHandle: cancelled/i);
     });
@@ -432,11 +445,17 @@ export function orchestratorTestSuite(
         (e) => e.completedCount >= 2,
         { timeout: 1000 }
       );
-      await writeUser(ctx.db, 'u20', { ok: true });
+      await writeUser(ctx.db, 'u20', {
+        ok: true,
+        timestamp: FieldValue.serverTimestamp(),
+      });
       const r1 = await w1;
       expect(r1.completedCount).toBeGreaterThanOrEqual(1);
 
-      await writeUser(ctx.db, 'u20', { ok: true });
+      await writeUser(ctx.db, 'u20', {
+        ok: true,
+        timestamp: FieldValue.serverTimestamp(),
+      });
       const r2 = await w2;
       expect(r2.completedCount).toBeGreaterThanOrEqual(2);
     });
@@ -464,11 +483,9 @@ export function orchestratorTestSuite(
     });
 
     it('G29: detaching cancels active waiters', async () => {
-      const p = ctx.orch.wait(
-        AppTrigger.OnUserWrite,
-        () => false,
-        { timeout: 1000 }
-      );
+      const p = ctx.orch.wait(AppTrigger.OnUserWrite, () => false, {
+        timeout: 1000,
+      });
       ctx.orch.detach();
       await expect(p).rejects.toThrow(/WaitHandle: cancelled/i);
     });
@@ -487,31 +504,42 @@ export function orchestratorTestSuite(
       const before = jest.fn();
       ctx.orch.observe(AppTrigger.OnUserWrite, { before });
 
-      const p = ctx.orch.wait(
-        AppTrigger.OnUserWrite,
-        () => false,
-        { timeout: 1000 }
+      const p = ctx.orch.wait(AppTrigger.OnUserWrite, () => false, {
+        timeout: 1000,
+      });
+      const expectRejection = expect(p).rejects.toThrow(
+        /WaitHandle: cancelled/i
       );
 
-      await writeUser(ctx.db, 'u22', { ok: true });
-      await sleep();
+      writeUser(ctx.db, 'u22', {
+        ok: true,
+        timestamp: FieldValue.serverTimestamp(),
+      });
+      await ctx.orch.waitOne(AppTrigger.OnUserWrite);
       const statsBefore = statsFor(ctx.orch, AppTrigger.OnUserWrite);
 
       ctx.orch.detach();
 
       // observers cleared → no more callbacks
-      await writeUser(ctx.db, 'u22', { ok: true });
-      await sleep();
+      await writeUser(ctx.db, 'u22', {
+        ok: true,
+        timestamp: FieldValue.serverTimestamp(),
+      });
+      await sleep(30);
 
       const statsAfter = statsFor(ctx.orch, AppTrigger.OnUserWrite);
+
       expect(statsAfter).toEqual(statsBefore); // unchanged
 
-      await expect(p).rejects.toThrow(/WaitHandle: cancelled/i);
+      await expectRejection;
     });
 
     it('H32: reset() zeroes stats and re-enables triggers, observers cleared', async () => {
       ctx.orch.observe(AppTrigger.OnUserWrite, { before: jest.fn() });
-      await writeUser(ctx.db, 'u23', { ok: true });
+      await writeUser(ctx.db, 'u23', {
+        ok: true,
+        timestamp: FieldValue.serverTimestamp(),
+      });
       await sleep();
 
       ctx.orch.reset();
@@ -522,7 +550,10 @@ export function orchestratorTestSuite(
       // observer cleared → no callbacks
       const spy = jest.fn();
       ctx.orch.observe(AppTrigger.OnUserWrite, { before: spy });
-      await writeUser(ctx.db, 'u23', { ok: true });
+      await writeUser(ctx.db, 'u23', {
+        ok: true,
+        timestamp: FieldValue.serverTimestamp(),
+      });
       await sleep();
       expect(spy).toHaveBeenCalledTimes(1); // fresh observer works
     });
@@ -576,7 +607,6 @@ export function orchestratorTestSuite(
       const s0 = statsFor(ctx.orch, AppTrigger.OnUserWrite);
       await writeUser(ctx.db, 'u26', { ok: true });
       ctx.orch.suspended = false;
-      await sleep();
       const s1 = statsFor(ctx.orch, AppTrigger.OnUserWrite);
       expect(s1).toEqual(s0);
     });
@@ -644,9 +674,7 @@ export function orchestratorTestSuite(
       await sleep();
 
       // Welcome post is deterministic
-      const postRef = ctx.db.doc(
-        PATH_WELCOME_POST.replace('{uid}', 'uc')
-      );
+      const postRef = ctx.db.doc(PATH_WELCOME_POST.replace('{uid}', 'uc'));
       const post = await postRef.get();
       expect(post.exists).toBe(true);
 
@@ -665,8 +693,11 @@ export function orchestratorTestSuite(
       const watch = jest.fn();
       const unwatch = ctx.orch.watchErrors(watch);
 
-      await createPost(ctx.db, 'p-missing-title', { /* title absent */ });
-      await sleep();
+      await createPost(ctx.db, 'p-missing-title', {
+        /* title absent */
+      });
+
+      await ctx.orch.waitOneError(AppTrigger.OnPostCreate);
 
       expect(watch).toHaveBeenCalled();
       const events = watch.mock.calls.map((c) => c[0]);

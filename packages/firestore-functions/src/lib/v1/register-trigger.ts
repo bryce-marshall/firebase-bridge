@@ -11,12 +11,12 @@ import {
   GenericTriggerMeta,
   TriggerRunner,
 } from '../_internal/trigger-runner.js';
-import { RegisterTriggerOptions } from '../types.js';
 import {
   GenericTriggerEventData,
   runUnavailableMsg,
-  toFirestorePath
+  toFirestorePath,
 } from '../_internal/util.js';
+import { RegisterTriggerOptions } from '../types.js';
 import { getTriggerMeta } from './meta-helper.js';
 
 export type TriggerPayload =
@@ -112,7 +112,16 @@ export function registerTrigger<
         },
       };
 
-      return handler.run(data.data as T, ctx);
+      // console.log('*** Before invoke cloud function');
+      const result = handler.run(data.data as T, ctx);
+      // console.log('*** After invoke cloud function');
+      return result;
+
+      // return handler.run(data.data as T, ctx);
+    }
+
+    override checkpoint(): void {
+      // console.log('*** v1 checkpoint');
     }
   })(target, handler, options);
 

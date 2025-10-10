@@ -8,11 +8,11 @@ import {
   GenericTriggerMeta,
   TriggerRunner,
 } from '../_internal/trigger-runner.js';
-import { RegisterTriggerOptions } from '../types.js';
 import {
   GenericTriggerEventData,
   runUnavailableMsg,
 } from '../_internal/util.js';
+import { RegisterTriggerOptions } from '../types.js';
 import { getTriggerMetaV2 } from './meta-helper.js';
 
 /**
@@ -80,6 +80,10 @@ export function registerTrigger<T extends CloudEvent<unknown>>(
       data: GenericTriggerEventData
     ): unknown {
       return handler.run(data as unknown as T);
+    }
+
+    override checkpoint(): void {
+      //
     }
   })(target, handler, options);
 

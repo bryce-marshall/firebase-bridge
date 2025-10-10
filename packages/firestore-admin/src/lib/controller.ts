@@ -339,6 +339,19 @@ export class FirestoreController {
   }
 
   /**
+   * The monotonically increasing atomic commit version of the database.
+   *
+   * @returns The database commit version.
+   * @throws {Error} If this database has been deleted.
+   */
+  version(): number {
+    this.assertExists();
+
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    return this._accessor!.version;
+  }
+
+  /**
    * Deletes the database from the mock environment, invalidating this controller.
    *
    * - After deletion, further calls to methods on this controller (other than `exists()` and `reset()`)
