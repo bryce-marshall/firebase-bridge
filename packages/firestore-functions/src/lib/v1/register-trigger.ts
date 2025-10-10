@@ -112,16 +112,7 @@ export function registerTrigger<
         },
       };
 
-      // console.log('*** Before invoke cloud function');
-      const result = handler.run(data.data as T, ctx);
-      // console.log('*** After invoke cloud function');
-      return result;
-
-      // return handler.run(data.data as T, ctx);
-    }
-
-    override checkpoint(): void {
-      // console.log('*** v1 checkpoint');
+      return handler.run(data.data as T, ctx);
     }
   })(target, handler, options);
 

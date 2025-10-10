@@ -81,10 +81,6 @@ export function registerTrigger<T extends CloudEvent<unknown>>(
     ): unknown {
       return handler.run(data as unknown as T);
     }
-
-    override checkpoint(): void {
-      //
-    }
   })(target, handler, options);
 
   return runner.unsub;
