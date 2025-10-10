@@ -13,8 +13,8 @@ describe('v2 TriggerOrchestrator tests', () => {
   const firestore = ctrl.firestore();
 
   // --- v2 Trigger: users/{uid} onWrite ---
-  const onUserWrite = onDocumentWritten(Helpers.PATH_USERS, (event) => {
-    Helpers.onUserWriteHandler(firestore, {
+  const onUserWrite = onDocumentWritten(Helpers.PATH_USERS, async (event) => {
+    await Helpers.onUserWriteHandler(firestore, {
       before: event.data?.before?.exists
         ? (event.data.before.data() as Helpers.UserDoc)
         : undefined,
@@ -26,9 +26,9 @@ describe('v2 TriggerOrchestrator tests', () => {
   });
 
   // --- v2 Trigger: posts/{postId} onCreate ---
-  const onPostCreate = onDocumentCreated(Helpers.PATH_POSTS, (event) => {
+  const onPostCreate = onDocumentCreated(Helpers.PATH_POSTS,async  (event) => {
     // event.data is the created snapshot
-    Helpers.onPostCreateHandler(
+    await Helpers.onPostCreateHandler(
       firestore,
       event.data?.data() as Helpers.PostDoc,
       { params: event.params ?? {} }
@@ -36,8 +36,8 @@ describe('v2 TriggerOrchestrator tests', () => {
   });
 
   // --- v2 Trigger: posts/{postId}/comments/{commentId} onWrite ---
-  const onCommentWrite = onDocumentWritten(Helpers.PATH_COMMENTS, (event) => {
-    Helpers.onCommentWriteHandler(firestore, {
+  const onCommentWrite = onDocumentWritten(Helpers.PATH_COMMENTS, async (event) => {
+    await Helpers.onCommentWriteHandler(firestore, {
       before: event.data?.before?.exists
         ? (event.data.before.data() as Helpers.CommentDoc)
         : undefined,

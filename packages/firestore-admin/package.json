@@ -1,6 +1,6 @@
 {
   "name": "@firebase-bridge/firestore-admin",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "license": "Apache-2.0",
   "description": "High-fidelity in-memory mock of the Firebase Firestore Admin SDK (Gapic) for unit tests and local dev.",

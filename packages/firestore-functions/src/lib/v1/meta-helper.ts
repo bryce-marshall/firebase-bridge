@@ -1,7 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { FirestoreController } from '@firebase-bridge/firestore-admin';
 import { CloudFunction } from 'firebase-functions/v1';
-import { CloudContext } from '../_internal/cloud-context.js';
 import { Kind } from '../_internal/util.js';
 
 export type TriggerMetaV1 = {
@@ -32,20 +30,14 @@ function mapKinds(eventType: string): (Kind | 'write')[] {
   return ['write'];
 }
 
-export function getTriggerMeta(
-  context: FirestoreController,
-  handler: CloudFunction<any>
-): TriggerMetaV1 {
-  return CloudContext.start(context, () => {
-    const ep = getEndpointSafe(handler);
-    const resource: string | undefined =
-      ep?.eventTrigger?.eventFilters?.resource;
-    const eventType: string | undefined = ep?.eventTrigger?.eventType;
-    if (!resource || !eventType) {
-      throw new Error('Not a Firestore event function or missing metadata');
-    }
-    const i = resource.indexOf('/documents/');
-    const route = i >= 0 ? resource.slice(i + '/documents/'.length) : resource;
-    return { route, kinds: mapKinds(eventType), resource, eventType };
-  });
+export function getTriggerMeta(handler: CloudFunction<any>): TriggerMetaV1 {
+  const ep = getEndpointSafe(handler);
+  const resource: string | undefined = ep?.eventTrigger?.eventFilters?.resource;
+  const eventType: string | undefined = ep?.eventTrigger?.eventType;
+  if (!resource || !eventType) {
+    throw new Error('Not a Firestore event function or missing metadata');
+  }
+  const i = resource.indexOf('/documents/');
+  const route = i >= 0 ? resource.slice(i + '/documents/'.length) : resource;
+  return { route, kinds: mapKinds(eventType), resource, eventType };
 }

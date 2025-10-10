@@ -67,11 +67,8 @@ export function registerTrigger<T extends CloudEvent<unknown>>(
   }
 
   const runner = new (class extends TriggerRunner<CloudFunction<T>> {
-    override getTriggerMeta(
-      target: FirestoreController,
-      handler: CloudFunction<any>
-    ): GenericTriggerMeta {
-      return getTriggerMetaV2(target, handler);
+    override getTriggerMeta(handler: CloudFunction<any>): GenericTriggerMeta {
+      return getTriggerMetaV2(handler);
     }
 
     override run(

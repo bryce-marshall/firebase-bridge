@@ -1,6 +1,4 @@
-import { FirestoreController } from '@firebase-bridge/firestore-admin';
 import type { CloudEvent, CloudFunction } from 'firebase-functions/v2';
-import { CloudContext } from '../_internal/cloud-context.js';
 import { Kind } from '../_internal/util.js';
 
 /**
@@ -180,20 +178,15 @@ function extractRouteFromEventTrigger(et: EventTrigger): string {
 
 /** Extracts route/kinds from a v2 Cloud Function endpoint. */
 export function getTriggerMetaV2(
-  ctrl: FirestoreController,
   handler: CloudFunction<CloudEvent<unknown>>
 ): TriggerMetaV2 {
-  return CloudContext.start(ctrl, () => {
-    const ep = getEndpointSafe(handler);
-    const et = ep?.eventTrigger;
-    if (!et)
-      throw new Error(
-        'Not a Firestore v2 event function (missing eventTrigger)'
-      );
+  const ep = getEndpointSafe(handler);
+  const et = ep?.eventTrigger;
+  if (!et)
+    throw new Error('Not a Firestore v2 event function (missing eventTrigger)');
 
-    const route = extractRouteFromEventTrigger(et);
-    const kinds = mapKindsV2(et.eventType);
+  const route = extractRouteFromEventTrigger(et);
+  const kinds = mapKindsV2(et.eventType);
 
-    return { route, kinds };
-  });
+  return { route, kinds };
 }

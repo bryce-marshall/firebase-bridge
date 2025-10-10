@@ -15,11 +15,13 @@ This package lets you run a real `firebase-admin` **Firestore** instance entirel
 - To bind firebase-functions v1/v2 Firestore triggers to an in-memory Firestore database use the companion package **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)**.
 
 ### When to use it
+
 - Unit and integration tests for backend code using `firebase-admin/firestore`
 - CI where the **Firestore Emulator** is slow or unavailable
 - Deterministic tests that need a controllable clock and fast resets
 
 ### Why not the emulator (for this use case)
+
 - Zero boot time. Zero deploy loop. Zero external processes — just edit, save, and test
 - Deterministic **in-memory Firestore** with controllable time
 - Suited to tight test loops and CI where startup cost matters
@@ -136,39 +138,40 @@ This package exposes a small set of high‑leverage primitives. Names below are 
 
 A top-level **environment** that owns one or more in-memory databases and a controllable clock.
 
-* `createDatabase(options?: FirestoreControllerOptions): FirestoreController`
+- `createDatabase(options?: FirestoreControllerOptions): FirestoreController`
   Provision a new database using an options object. All fields are optional with defaults:
 
-  * `projectId` defaults to `"default-project"`
-  * `databaseId` defaults to `"(default)"`
-  * `location` defaults to `"nam5"`
-  * `namespace` defaults to `"(default)"`
+  - `projectId` defaults to `"default-project"`
+  - `databaseId` defaults to `"(default)"`
+  - `location` defaults to `"nam5"`
+  - `namespace` defaults to `"(default)"`
     Use this form if you need to specify location or namespace in your tests.
-* `createDatabase(projectId?: string, databaseId?: string): FirestoreController`
+
+- `createDatabase(projectId?: string, databaseId?: string): FirestoreController`
   Provision a new database by explicit IDs (defaults as above).
-* `getDatabase(projectId?: string, databaseId?: string): FirestoreController`
+- `getDatabase(projectId?: string, databaseId?: string): FirestoreController`
   Access an existing database (throws if missing/deleted).
-* `databaseExists(projectId?: string, databaseId?: string): boolean`
-* `deleteAll(): void` – delete all databases in the environment.
-* `resetAll(): void` – reset all databases (data & stats) without deleting them.
-* `systemTime: SystemTime` – **controllable time source** for deterministic tests.
+- `databaseExists(projectId?: string, databaseId?: string): boolean`
+- `deleteAll(): void` – delete all databases in the environment.
+- `resetAll(): void` – reset all databases (data & stats) without deleting them.
+- `systemTime: SystemTime` – **controllable time source** for deterministic tests.
 
 ### `class FirestoreController`
 
 A handle to a **single logical database** (identified by `projectId` and `databaseId`).
 
-* `projectId: string`, `databaseId: string`
-* `location: string` – Firestore database location identifier used in CloudEvents and resource metadata. Accepts multi‑region IDs (e.g. `nam5`, `eur3`) or regional IDs (e.g. `us-central1`). Defaults to `nam5` if omitted.
-* `namespace: string` – Datastore namespace. For Firestore Native mode this should remain `(default)`. Included for fidelity when simulating Datastore‑mode events. Defaults to `(default)` if omitted.
-* `firestore(settings?: Settings): Firestore`
+- `projectId: string`, `databaseId: string`
+- `location: string` – Firestore database location identifier used in CloudEvents and resource metadata. Accepts multi‑region IDs (e.g. `nam5`, `eur3`) or regional IDs (e.g. `us-central1`). Defaults to `nam5` if omitted.
+- `namespace: string` – Datastore namespace. For Firestore Native mode this should remain `(default)`. Included for fidelity when simulating Datastore‑mode events. Defaults to `(default)` if omitted.
+- `firestore(settings?: Settings): Firestore`
   Create a **Firestore Admin SDK** instance **scoped** to this database.
-* `exists(): boolean` – whether the database still exists.
-* `version(): number` – The monotonically increasing atomic commit version of the database.
-* `delete(): void` – delete this database; subsequent calls (besides `exists()`/`reset()`) throw.
-* `reset(): void` – clear documents & stats but keep the DB alive.
-* `getStats(): FirestoreMockStats` – current cumulative stats snapshot.
-* `watchStats(watcher: (s: FirestoreMockStats) => void): () => void` – subscribe to stat changes (returns an unsubscribe).
-* `database: DatabaseDirect` – direct/low‑level access to the in‑memory DB (see below).
+- `exists(): boolean` – whether the database still exists.
+- `version(): number` – The monotonically increasing atomic commit version of the database.
+- `delete(): void` – delete this database; subsequent calls (besides `exists()`/`reset()`) throw.
+- `reset(): void` – clear documents & stats but keep the DB alive.
+- `getStats(): FirestoreMockStats` – current cumulative stats snapshot.
+- `watchStats(watcher: (s: FirestoreMockStats) => void): () => void` – subscribe to stat changes (returns an unsubscribe).
+- `database: DatabaseDirect` – direct/low‑level access to the in‑memory DB (see below).
 
 ### `class DatabaseDirect`
 
@@ -196,7 +199,7 @@ A thin, synchronous façade for **direct data access** (seeding, inspection, str
   - `batchWrite<T>(writes: (DatabaseDocument<T> | string)[]): MetaDocument<T>[]`
     (`{ path, data }` → `set`; `string` → `delete`)
 
-> **Triggers:** Low‑level trigger registration exists on `DatabaseDirect`. This can be handy in white‑box tests. For Cloud Functions parity (v1/v2 events, subjects, metadata), prefer **`@firebase-bridge/firestore-functions`**.
+> **Triggers:** Low‑level trigger registration exists on `DatabaseDirect`. This can be handy in white‑box tests. For Cloud Functions parity (v1/v2 events, subjects, metadata), prefer the **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)** companion package..
 
 #### Low‑level trigger example (DatabaseDirect)
 
@@ -249,7 +252,7 @@ unsubscribe();
 >
 > - Triggers fire **after** each atomic commit.
 > - If multiple writes target the same document in a single commit, only the **final state** for that path is delivered.
-> - For Cloud Functions fidelity (v1/v2 payload shaping, subjects, event IDs), use **`@firebase-bridge/firestore-functions`**.
+> - For Cloud Functions fidelity (v1/v2 payload shaping, subjects, event IDs), prefer the **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)** companion package.
 
 #### DatabaseDirect — writes (including `fromStructuralDatabase()` shapes)
 
@@ -588,7 +591,7 @@ From this package you can import:
 - Time control: `SystemTime`
 - Useful types for assertions: `MetaDocument`, `MetaDocumentExists`, `MetaDocumentNotExists`, `MergeGranularity`, `Trigger`, `TriggerEventArg`, `FirestoreMockStats`
 
-> **Cloud Functions:** for registering/using triggers in tests, depend on **`@firebase-bridge/firestore-functions`**.
+> **Cloud Functions:** for registering/using triggers in tests, depend on the **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)** companion package.
 
 ---
 
@@ -602,6 +605,15 @@ From this package you can import:
 
 - **Time‑sensitive assertions are flaky**
   Pin or advance time via `env.systemTime`.
+
+- **Tests hang or fail to exit cleanly after running**  
+  Ensure all in-memory databases are explicitly disposed of once tests finish.  
+  Add an `afterEach()` or `afterAll()` hook to call one of the following, depending on scope:
+
+  - `env.deleteAll()` — deletes **all databases** in the `FirestoreMock` environment
+  - `controller.delete()` — deletes a **single database** via its `FirestoreController`
+
+  This guarantees that background resources (timers, intervals, listeners, etc.) are released and allows your test runner to shut down cleanly.
 
 ---
 

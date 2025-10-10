@@ -87,6 +87,8 @@ export function orchestratorTestSuite(
     });
 
     afterAll(() => {
+      // Ensure all background resources are released
+      triggers.detach();
       ctrl.delete();
     });
 
@@ -320,7 +322,7 @@ export function orchestratorTestSuite(
       unwatch();
     });
 
-    it('E18: TriggerEventExArg object identity consistent per phase', async () => {
+    it('E18: OrchestratorEventArg object identity consistent per phase', async () => {
       const seen: any[] = [];
       ctx.orch.observe(AppTrigger.OnUserWrite, {
         before: (arg) => seen.push(['before', arg]),
@@ -560,7 +562,7 @@ export function orchestratorTestSuite(
 
     // ───────────────────────────────── I. Event payload & forwarding ─────────────────────────────────
 
-    it('I33: forwarded TriggerEventArg merged into TriggerEventExArg', async () => {
+    it('I33: forwarded TriggerEventArg merged into OrchestratorEventArg', async () => {
       const spy = jest.fn((arg) => {
         expect(arg.key).toBe(AppTrigger.OnUserWrite);
         // `arg` should carry the original payload fields (e.g., change.before/after in v1/v2 shims)
