@@ -944,7 +944,7 @@ export function orchestratorTestSuite(
       const off3 = ctx.orch.onAll(() => order.push('C'));
 
       await writeUser(ctx.db, 'oa5-u', { ok: true });
-      await sleep();
+      await ctx.orch.waitOne(AppTrigger.OnUserWrite); // Will fire other triggers after write
 
       // Expect order A -> B -> C for the same successful key
       expect(order.join('')).toBe('ABC');
