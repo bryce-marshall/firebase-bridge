@@ -397,12 +397,13 @@ Immutable snapshots returned from direct ops, queries, and write results.
 
 **Common fields (`MetaDocument<T>`)**
 
+- `epoch: number` – internal database **epoch** that increments each time the internal database is reset
 - `parent: string` – collection path of the doc’s parent
 - `path: string` – fully qualified document path
 - `id: string` – last segment of `path`
 - `serverTime: Timestamp` – authoritative commit/apply time for the producing op
 - `updateTime: Timestamp` – last update time for the doc (0 if never existed)
-- `version: number` – internal change sequence number
+- `version: number` – the monotonically increasing atomic **commit** version of the database
 - `hasChanges: boolean` – whether the producing op changed the doc
 - `createTime?: Timestamp` – when the doc was first created (undefined if never existed)
 - `data?: T` – **deeply frozen** data; use `cloneData()` for a mutable copy
