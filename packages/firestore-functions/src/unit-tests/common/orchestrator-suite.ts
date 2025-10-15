@@ -4,7 +4,10 @@ import {
   FirestoreMock,
 } from '@firebase-bridge/firestore-admin';
 import { FieldValue, Firestore } from 'firebase-admin/firestore';
-import { TriggerOrchestrator } from '../../lib/trigger-orchestrator.js';
+import {
+  OrchestratorErrorEventArg,
+  TriggerOrchestrator,
+} from '../../lib/trigger-orchestrator.js';
 import { TriggerErrorOrigin } from '../../lib/types.js';
 import {
   AppTrigger,
@@ -78,17 +81,15 @@ export function orchestratorTestSuite(
   triggers: TriggerOrchestrator<AppTrigger>
 ): void {
   describe(`${version} TriggerOrchestrator tests`, () => {
-    let ctx: Ctx;
+    const ctx: Ctx = { version, env, ctrl, db: firestore, orch: triggers };
 
     beforeEach(() => {
       ctrl.reset();
       triggers.reset(); // ensure fresh stats/observers and enabled
-      ctx = { version, env, ctrl, db: firestore, orch: triggers };
     });
 
     afterAll(() => {
       // Ensure all background resources are released
-      triggers.detach();
       ctrl.delete();
     });
 
@@ -258,9 +259,9 @@ export function orchestratorTestSuite(
     });
 
     it('E14: error called only on failure with cause', async () => {
-      const error = jest.fn((arg, cause) => {
-        expect(cause).toBeInstanceOf(Error);
-        expect((cause as Error).message).toMatch(ERR_USER_WRITE_FAIL);
+      const error = jest.fn((arg: OrchestratorErrorEventArg<AppTrigger>) => {
+        expect(arg.cause).toBeInstanceOf(Error);
+        expect((arg.cause as Error).message).toMatch(ERR_USER_WRITE_FAIL);
       });
       const off = ctx.orch.observe(AppTrigger.OnUserWrite, { error });
 
@@ -711,6 +712,246 @@ export function orchestratorTestSuite(
         )
       ).toBe(true);
       unwatch();
+    });
+
+    // ───────────────────────────────── M*. observeAll (multi-key observers) ─────────────────────────────────
+
+    it('M-41: observeAll attaches one observer to all keys; callbacks fire per-key', async () => {
+      const seenBefore = new Set<AppTrigger>();
+      const seenAfter = new Set<AppTrigger>();
+
+      const before = jest.fn((arg) => {
+        expect(Object.isFrozen(arg)).toBe(true);
+        seenBefore.add(arg.key as AppTrigger);
+      });
+      const after = jest.fn((arg) => {
+        seenAfter.add(arg.key as AppTrigger);
+      });
+
+      const offAll = ctx.orch.observeAll({ before, after });
+
+      // Trigger at least two *different* keys
+      await writeUser(ctx.db, 'oa-1', { ok: true }); // -> OnUserWrite (success)
+      await createPost(ctx.db, 'oa-1', { title: 'ok' }); // -> OnPostCreate (success)
+      await sleep();
+
+      // Both keys should have invoked the shared observers
+      expect(before).toHaveBeenCalled();
+      expect(after).toHaveBeenCalled();
+
+      expect(seenBefore.has(AppTrigger.OnUserWrite)).toBe(true);
+      expect(seenBefore.has(AppTrigger.OnPostCreate)).toBe(true);
+
+      expect(seenAfter.has(AppTrigger.OnUserWrite)).toBe(true);
+      expect(seenAfter.has(AppTrigger.OnPostCreate)).toBe(true);
+
+      offAll();
+    });
+
+    it('M-42: observeAll returns a single unsubscribe that removes observer from all keys', async () => {
+      const before = jest.fn();
+      const offAll = ctx.orch.observeAll({ before });
+
+      // First round: should receive callbacks for both keys
+      await writeUser(ctx.db, 'oa-2', { ok: true });
+      await createPost(ctx.db, 'oa-2', { title: 'ok' });
+      await sleep();
+      const callsAfterFirst = before.mock.calls.length;
+      expect(callsAfterFirst).toBeGreaterThanOrEqual(2);
+
+      // Unsubscribe and trigger again — no more callbacks from any key
+      offAll();
+      await writeUser(ctx.db, 'oa-2b', { ok: true });
+      await createPost(ctx.db, 'oa-2b', { title: 'ok' });
+      await sleep();
+
+      expect(before.mock.calls.length).toBe(callsAfterFirst);
+    });
+
+    it('M-43: observeAll.error receives failures from each key with correct arg.key', async () => {
+      const errorSpy = jest.fn((e: OrchestratorErrorEventArg<AppTrigger>) => {
+        expect(e.cause).toBeInstanceOf(Error);
+        // key-specific message checks (reuse existing failure routes)
+        if (e.key === AppTrigger.OnUserWrite) {
+          expect((e.cause as Error).message).toMatch(ERR_USER_WRITE_FAIL);
+        }
+        if (e.key === AppTrigger.OnPostCreate) {
+          expect((e.cause as Error).message).toMatch(
+            ERR_POST_CREATE_MISSING_TITLE
+          );
+        }
+      });
+
+      const offAll = ctx.orch.observeAll({ error: errorSpy });
+
+      // Fail OnUserWrite
+      await writeUser(ctx.db, 'oa-3-u', { ok: false });
+      await ctx.orch.waitOneError(AppTrigger.OnUserWrite);
+
+      // Fail OnPostCreate
+      await createPost(ctx.db, 'oa-3-p', {
+        /* missing title to trigger failure */
+      });
+      await ctx.orch.waitOneError(AppTrigger.OnPostCreate);
+
+      // We expect at least one error per failed key
+      const keysSeen = new Set(
+        errorSpy.mock.calls.map(
+          (c) => (c[0] as OrchestratorErrorEventArg<AppTrigger>).key
+        )
+      );
+      expect(keysSeen.has(AppTrigger.OnUserWrite)).toBe(true);
+      expect(keysSeen.has(AppTrigger.OnPostCreate)).toBe(true);
+
+      // Unsubscribe and ensure no further error callbacks
+      offAll();
+      await writeUser(ctx.db, 'oa-3-u2', { ok: false });
+      await sleep();
+      const keysSeenAfter = new Set(
+        errorSpy.mock.calls.map(
+          (c) => (c[0] as OrchestratorErrorEventArg<AppTrigger>).key
+        )
+      );
+      expect(keysSeenAfter).toEqual(keysSeen);
+    });
+
+    it('M-44: observer exceptions from observeAll propagate via watchErrors with origin=OnBefore', async () => {
+      const boom = new Error('observeAll before broke');
+
+      // Throw from the shared before observer
+      ctx.orch.observeAll({
+        before: () => {
+          throw boom;
+        },
+      });
+
+      const watch = jest.fn((e: OrchestratorErrorEventArg<AppTrigger>) => {
+        expect(e.origin).toBe(TriggerErrorOrigin.OnBefore);
+        expect(e.cause).toBe(boom);
+        // Should preserve the *actual* key that was running when it threw
+        expect(
+          e.key === AppTrigger.OnUserWrite ||
+            e.key === AppTrigger.OnPostCreate ||
+            e.key === AppTrigger.OnCommentWrite
+        ).toBe(true);
+      });
+      const unwatch = ctx.orch.watchErrors(watch);
+      // Any successful trigger will do; choose user write for determinism
+      await writeUser(ctx.db, 'oa-4', { ok: true });
+      await ctx.orch.waitOne(AppTrigger.OnCommentWrite);
+
+      expect(watch).toHaveBeenCalledTimes(3);
+      unwatch();
+    });
+
+    // ───────────────────────────────── E-ALL. onAll (global post-invocation callbacks) ─────────────────────────────────
+
+    it('N-45: onAll attaches a post-invocation callback to all registered keys; fires only on success', async () => {
+      const seen = new Set<AppTrigger>();
+      const cb = jest.fn((e) => {
+        expect(Object.isFrozen(e)).toBe(true);
+        seen.add(e.key as AppTrigger);
+      });
+
+      const off = ctx.orch.onAll(cb);
+
+      // Success on two distinct keys
+      await writeUser(ctx.db, 'oa1-u', { ok: true }); // OnUserWrite success
+      await createPost(ctx.db, 'oa1-p', { title: 'ok' }); // OnPostCreate success
+      await sleep();
+
+      expect(cb).toHaveBeenCalled();
+      expect(seen.has(AppTrigger.OnUserWrite)).toBe(true);
+      expect(seen.has(AppTrigger.OnPostCreate)).toBe(true);
+
+      off();
+    });
+
+    it('N-46: onAll does NOT run for failures on any key', async () => {
+      const cb = jest.fn();
+      ctx.orch.onAll((arg) => {
+        console.log(`E-ALL2 onCallback for ${arg.key}`, arg.doc.data);
+      });
+      const off = ctx.orch.onAll(cb);
+
+      // Cause failures on two keys
+      await writeUser(ctx.db, 'oa2-u', { ok: false }); // user write failure
+      await ctx.orch.waitOneError(AppTrigger.OnUserWrite);
+
+      await createPost(ctx.db, 'oa2-p', {
+        /* missing title to trigger failure */
+      });
+      await ctx.orch.waitOneError(AppTrigger.OnPostCreate);
+
+      // No calls expected because both invocations failed
+      expect(cb).not.toHaveBeenCalled();
+
+      off();
+    });
+
+    it('N-47: onAll unsubscribe removes the callback from ALL keys', async () => {
+      const cb = jest.fn();
+      const off = ctx.orch.onAll(cb);
+
+      // First round (should be called twice for two successes)
+      await writeUser(ctx.db, 'oa3-u1', { ok: true });
+      await createPost(ctx.db, 'oa3-p1', { title: 'ok' });
+      await sleep();
+      const called = cb.mock.calls.length;
+      expect(called).toBeGreaterThanOrEqual(2);
+
+      // Unsubscribe, then trigger again — should not be called further
+      off();
+      await writeUser(ctx.db, 'oa3-u2', { ok: true });
+      await createPost(ctx.db, 'oa3-p2', { title: 'ok' });
+      await sleep();
+
+      expect(cb.mock.calls.length).toBe(called);
+    });
+
+    it('N-48: exceptions thrown from onAll callback surface via watchErrors with origin=OnAfter and correct key', async () => {
+      const boom = new Error('onAll after broke');
+
+      // Throw from the onAll callback
+      ctx.orch.onAll(() => {
+        throw boom;
+      });
+
+      const watch = jest.fn((e) => {
+        expect(e.origin).toBe(TriggerErrorOrigin.OnAfter);
+        expect(e.cause).toBe(boom);
+        // The event is the arg; key is exposed directly
+        expect(
+          e.key === AppTrigger.OnUserWrite ||
+            e.key === AppTrigger.OnPostCreate ||
+            e.key === AppTrigger.OnCommentWrite
+        ).toBe(true);
+      });
+      const unwatch = ctx.orch.watchErrors(watch);
+
+      // Any successful trigger is fine to provoke the after-phase throw
+      await writeUser(ctx.db, 'oa4-u', { ok: true });
+      await ctx.orch.waitOne(AppTrigger.OnCommentWrite);
+
+      expect(watch).toHaveBeenCalledTimes(3);
+      unwatch();
+    });
+
+    it('N-49: multiple onAll callbacks run in registration order per key', async () => {
+      const order: string[] = [];
+      const off1 = ctx.orch.onAll(() => order.push('A'));
+      const off2 = ctx.orch.onAll(() => order.push('B'));
+      const off3 = ctx.orch.onAll(() => order.push('C'));
+
+      await writeUser(ctx.db, 'oa5-u', { ok: true });
+      await sleep();
+
+      // Expect order A -> B -> C for the same successful key
+      expect(order.join('')).toBe('ABC');
+
+      off1();
+      off2();
+      off3();
     });
   });
 }

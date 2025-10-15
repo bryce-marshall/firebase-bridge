@@ -11,7 +11,7 @@ import {
   NormalizedWrite,
   NormalizedWriteResult,
   Trigger,
-  WriteMode,
+  WriteMode
 } from './_internal/data-accessor.js';
 import { StructuralDatabase } from './structural-database.js';
 

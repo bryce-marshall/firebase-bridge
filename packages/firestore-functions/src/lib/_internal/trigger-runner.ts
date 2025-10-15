@@ -97,9 +97,9 @@ export abstract class TriggerRunner<THandler> {
   ) {
     const opt = { ...options };
     // Execute within a Cloud Functions-like environment
-    const { route, kinds } = CloudContext.start(target, () =>
-      this.getTriggerMeta(handler)
-    );
+    const { route, kinds } = CloudContext.start(target, () => {
+      return this.getTriggerMeta(handler);
+    });
 
     this.unsub = target.database.registerTrigger({
       route,

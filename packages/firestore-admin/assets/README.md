@@ -168,11 +168,14 @@ A handle to a **single logical database** (identified by `projectId` and `databa
 - `firestore(settings?: Settings): Firestore`
   Create a **Firestore Admin SDK** instance **scoped** to this database.
 - `exists(): boolean` – whether the database still exists.
+- `epoch(): number` – The monotonically increasing epoch version of the database (incremented with each `reset()`).
 - `version(): number` – The monotonically increasing atomic commit version of the database.
 - `delete(): void` – delete this database; subsequent calls (besides `exists()`/`reset()`) throw.
 - `reset(): void` – clear documents & stats but keep the DB alive.
 - `getStats(): FirestoreMockStats` – current cumulative stats snapshot.
 - `watchStats(watcher: (s: FirestoreMockStats) => void): () => void` – subscribe to stat changes (returns an unsubscribe).
+- `watchLifecycle(watcher: (s: DatabaseLifecycleEventArg) => void): () => void` – subscribe to lifecycle events (returns an unsubscribe).
+
 - `database: DatabaseDirect` – direct/low‑level access to the in‑memory DB (see below).
 
 ### `class DatabaseDirect`

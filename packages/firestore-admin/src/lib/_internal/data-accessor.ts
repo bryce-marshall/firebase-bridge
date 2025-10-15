@@ -554,6 +554,15 @@ export interface DocumentQuery<T extends DocumentData = DocumentData> {
  */
 export interface MetaDocument<T extends DocumentData = DocumentData> {
   /**
+   * Monotonically increasing **per-DataAccessor** epoch identifier.
+   *
+   * - **Increments only when the in-memory database is reset** (never for reads/writes/commits).
+   * - Remains constant for the entire lifetime of a given database instance between resets.
+   * - When combined with {@link version} (the commit sequence number), `(epoch, version)`
+   *   provides a stable total ordering key across resets.
+   */
+  readonly epoch: number;
+  /**
    * The path of the parent collection for this document (e.g., `"cities/SF/neighborhoods"`).
    * Always a collection path, never a document path.
    */
@@ -784,14 +793,27 @@ class _AsyncDataAccessor {
  */
 export type AsyncDataAccessor = _AsyncDataAccessor;
 
+interface OpContext {
+  readonly serverTime: Timestamp;
+  readonly epoch: number;
+  readonly version: number;
+  readonly datasource: Datasource;
+}
+
 export class DataAccessor implements PathDataProvider {
+  /**
+   * Monotonically increasing **per-DataAccessor** epoch identifier.
+   * Increments only when the in-memory database is reset (never for reads/writes/commits).
+   * Remains constant for the entire lifetime of a given database instance between resets.
+   */
+  private _epoch = 0;
   /**
    * The monotonically increasing atomic commit version (increments with each atomic `batchWrite`).
    * Each document change (create/update/delete) carries the version associated with its corresponding
    * `batchWrite`.
    */
   private _version = 0;
-  private readonly _resetListeners = new Listeners<void>();
+  private readonly _resetListeners = new Listeners<number>();
   private readonly _statsWatchers = new Listeners<DatabaseStats>();
   private readonly _changeWatchers = new Set<ChangeWatcher>();
   private readonly _triggers = new Set<Trigger>();
@@ -832,6 +854,18 @@ export class DataAccessor implements PathDataProvider {
   }
 
   /**
+   * The monotonically increasing **per-DataAccessor** epoch identifier.
+   *
+   * - **Increments only when the in-memory database is reset** (never for reads/writes/commits).
+   * - Remains constant for the entire lifetime of a given database instance between resets.
+   * - When combined with {@link version} (the commit sequence number), `(epoch, version)`
+   *   provides a stable total ordering key across resets.
+   */
+  get epoch(): number {
+    return this._epoch;
+  }
+
+  /**
    * The monotonically increasing atomic commit version (increments with each atomic `batchWrite`).
    * Each document change (create/update/delete) carries the version associated with its corresponding
    * `batchWrite`.
@@ -867,7 +901,7 @@ export class DataAccessor implements PathDataProvider {
    * - The callback is invoked on the mock’s deterministic microtask queue.
    * - Multiple listeners are supported; order of invocation is unspecified.
    */
-  registerResetListener(callback: () => void): () => void {
+  registerResetListener(callback: (epoch: number) => void): () => void {
     return this._resetListeners.register(callback);
   }
 
@@ -956,14 +990,11 @@ export class DataAccessor implements PathDataProvider {
    */
   toMetaArray(): MetaDocumentExists[] {
     const result: MetaDocumentExists[] = [];
-
-    const serverTime = this.serverTime();
+    const context = this.opContext();
 
     this._src.docs.forEach((master) => {
       if (master.exists) {
-        result.push(
-          readMetaDoc(serverTime, master, master) as MetaDocumentExists
-        );
+        result.push(readMetaDoc(context, master, master) as MetaDocumentExists);
       }
     });
 
@@ -984,12 +1015,11 @@ export class DataAccessor implements PathDataProvider {
    */
   toMetaMap(): Record<string, MetaDocumentExists> {
     const result: DocumentData = {};
-
-    const serverTime = this.serverTime();
+    const context = this.opContext();
 
     this._src.docs.forEach((master) => {
       if (master.exists) {
-        result[master.pathData.path] = readMetaDoc(serverTime, master, master);
+        result[master.pathData.path] = readMetaDoc(context, master, master);
       }
     });
 
@@ -1188,13 +1218,13 @@ export class DataAccessor implements PathDataProvider {
   listDocuments(collectionPath: string, showMissing: boolean): MetaDocument[] {
     this._pathCache.assert(collectionPath, 'collection');
     const result: MetaDocument[] = [];
-    const serverTime = this.serverTime();
+    const context = this.opContext();
     const col = this._src.cols.get(collectionPath);
 
     if (col && (col.hasActiveDocs || (showMissing && col.hasActiveLeafDocs))) {
       for (const doc of col.getDocumentIterator()) {
         if (doc.exists || (showMissing && doc.hasActiveLeafDocs)) {
-          result.push(readMetaDoc(serverTime, doc, doc, showMissing));
+          result.push(readMetaDoc(context, doc, doc, undefined, showMissing));
         }
       }
     }
@@ -1249,7 +1279,7 @@ export class DataAccessor implements PathDataProvider {
   query<T extends DocumentData = DocumentData>(
     q: DocumentQuery<T>
   ): MetaDocumentExists<T>[] {
-    const now = this.serverTime();
+    const context = this.opContext();
     const wantDeep = q.allDescendants === true;
     const results: MetaDocumentExists<T>[] = [];
 
@@ -1259,13 +1289,13 @@ export class DataAccessor implements PathDataProvider {
 
     const metaFetch = q.readTime
       ? (doc: MasterDocument) => {
-          return doc.getSnapshot(now, q.readTime as Timestamp) as
+          return doc.getSnapshot(context, q.readTime as Timestamp) as
             | MetaDocument<T>
             | undefined;
         }
       : (doc: MasterDocument) => {
           return doc.exists
-            ? (readMetaDoc<T>(now, doc, doc) as MetaDocument<T>)
+            ? (readMetaDoc<T>(context, doc, doc) as MetaDocument<T>)
             : undefined;
         };
 
@@ -1330,12 +1360,8 @@ export class DataAccessor implements PathDataProvider {
     documentPath: string,
     readTime?: Timestamp
   ): MetaDocument<T> {
-    const meta = MasterDocument.get<T>(
-      this._src,
-      this.serverTime(),
-      documentPath,
-      readTime
-    );
+    const context = this.opContext();
+    const meta = MasterDocument.get<T>(context, documentPath, readTime);
     bumpReads(this._src, meta.exists ? 1 : 0);
 
     return meta;
@@ -1462,8 +1488,7 @@ export class DataAccessor implements PathDataProvider {
    */
   batchWrite(ops: NormalizedWrite[], mode: WriteMode): NormalizedWriteResult {
     const SerialFailToken = 'SerialFail';
-    const version = ++this._version;
-    const serverTime = this.serverTime() as Timestamp;
+    const context = this.opContext(true);
     const results: MetaDocument[] = [];
     const statuses: (WriteStatus | undefined)[] | undefined =
       mode === WriteMode.Serial ? [] : undefined;
@@ -1483,7 +1508,7 @@ export class DataAccessor implements PathDataProvider {
     const ensureMeta = (path: string): BatchWriteMeta => {
       let meta = docBuffer.get(path);
       if (meta == undefined) {
-        const existing = MasterDocument.get(this._src, serverTime, path);
+        const existing = MasterDocument.get(context, path);
         meta = {
           exists: existing.exists,
         };
@@ -1551,20 +1576,20 @@ export class DataAccessor implements PathDataProvider {
           case 'set': {
             const current = existing.data ?? {};
             const cloned = mergeInto(op, current);
-            applyTransformers(serverTime, cloned, current);
+            applyTransformers(context.serverTime, cloned, current);
             const normalized = normalizeFirestoreData(cloned);
             assertMaxDepth(cloned);
             assertWithinSizeLimit(op.path, normalized);
             existing.exists = true;
             existing.data = normalized;
-            existing.updateTime = serverTime;
+            existing.updateTime = context.serverTime;
             break;
           }
 
           case 'delete': {
             existing.exists = false;
             existing.data = undefined;
-            existing.updateTime = serverTime;
+            existing.updateTime = context.serverTime;
             break;
           }
         }
@@ -1576,24 +1601,17 @@ export class DataAccessor implements PathDataProvider {
         let writeResult: MetaDocument | undefined;
         if (doc?.exists) {
           writeResult = MasterDocument.set(
-            this._src,
-            version,
-            serverTime,
+            context,
             op.path,
             doc.data as DocumentData
           );
         }
         if (!writeResult) {
-          writeResult = MasterDocument.delete(
-            this._src,
-            version,
-            serverTime,
-            op.path
-          );
+          writeResult = MasterDocument.delete(context, op.path);
         }
         results.push(writeResult);
       }
-      this.enqueueChanges(serverTime);
+      this.enqueueChanges(context.serverTime);
     } catch (cause) {
       this._src.changes.slice(0);
       if (cause instanceof GoogleError) throw cause;
@@ -1602,7 +1620,7 @@ export class DataAccessor implements PathDataProvider {
     }
 
     return {
-      serverTime,
+      serverTime: context.serverTime,
       results,
       statuses: statuses?.length
         ? statuses.map((s) => {
@@ -1773,6 +1791,7 @@ export class DataAccessor implements PathDataProvider {
    */
   reset(): void {
     this.clear();
+    this._epoch += 1;
     this._version = 0;
     this._changeWatchers.clear();
     this._triggers.clear();
@@ -1784,7 +1803,7 @@ export class DataAccessor implements PathDataProvider {
     stats.noopReads = 0;
     stats.noopDeletes = 0;
     stats.noopWrites = 0;
-    this._resetListeners.next();
+    this._resetListeners.next(this._epoch);
   }
 
   /**
@@ -1944,15 +1963,51 @@ export class DataAccessor implements PathDataProvider {
   private all(): MetaDocument[] {
     const r: MetaDocument[] = [];
     if (this._src.docs.size > 0) {
-      const serverTime = this.serverTime();
+      const context = this.opContext();
       this._src.docs.forEach((d) => {
         if (d.exists) {
-          r.push(readMetaDoc(serverTime, d, d));
+          r.push(readMetaDoc(context, d, d));
         }
       });
     }
 
     return r;
+  }
+
+  /**
+   * Constructs an immutable operation context for a single datastore action.
+   *
+   * The context captures the current **epoch**, **commit sequence `version`**,
+   * a point-in-time **`serverTime`**, and the active **datasource** backing
+   * this `DataAccessor`. Use this to stamp reads/writes with consistent,
+   * authoritative metadata.
+   *
+   * @param incVersion - When `true`, atomically **increments** the internal
+   * commit sequence counter and returns the **new** value in `version`.
+   * When `false` (default), returns the **current** `version` without changing it.
+   * - Pass `true` for operations that **apply a write/commit**.
+   * - Pass `false` for **pure reads** or preflight checks.
+   *
+   * @returns An {@link OpContext} object:
+   * - `epoch`: Monotonically increasing identifier for this accessor’s lifecycle.
+   * - `version`: Commit sequence number (incremented only when `incVersion` is `true`).
+   * - `serverTime`: The mock server’s authoritative timestamp for the operation.
+   * - `datasource`: The underlying in-memory source used to resolve the operation.
+   *
+   * @remarks
+   * - `(epoch, version)` forms a total ordering key across database resets.
+   * - `serverTime` is captured at call time and should be used for transform
+   *   evaluation and timestamp fields to ensure deterministic results.
+   */
+  private opContext(incVersion = false): OpContext {
+    const version = incVersion ? ++this._version : this._version;
+
+    return {
+      epoch: this._epoch,
+      version,
+      serverTime: this.serverTime(),
+      datasource: this._src,
+    };
   }
 }
 
@@ -2138,38 +2193,34 @@ class MasterDocument extends InternalDocument {
   }
 
   static get<T extends DocumentData>(
-    datasource: Datasource,
-    serverTime: Timestamp,
+    context: OpContext,
     path: string,
     readTime?: Timestamp
   ): MetaDocument<T> {
-    const master = datasource.docs.get(path);
+    const master = context.datasource.docs.get(path);
     if (master == undefined)
       return notExistsMetaDoc(
-        serverTime,
+        context,
         // throws
-        datasource.pathData(path, 'document'),
+        context.datasource.pathData(path, 'document'),
         undefined
       );
 
-    if (!readTime) return readMetaDoc(serverTime, master, master);
+    if (!readTime) return readMetaDoc(context, master, master);
 
-    return master.getSnapshot(serverTime, readTime);
+    return master.getSnapshot(context, readTime);
   }
 
-  /**
-   *
-   */
   static set<T extends DocumentData>(
-    datasource: Datasource,
-    version: number,
-    serverTime: Timestamp,
+    context: OpContext,
     path: string,
     data: T
   ): MetaDocument<T> {
+    const datasource = context.datasource;
+    const serverTime = context.serverTime;
     const master = MasterDocument.ensure(datasource, path);
     data = freezeDocumentData(cloneDocumentData(data));
-    const meta = writeMetaDoc<T>(version, serverTime, master, data);
+    const meta = writeMetaDoc<T>(context, master, data);
 
     if (meta.hasChanges) {
       master.pushHistory();
@@ -2182,7 +2233,7 @@ class MasterDocument extends InternalDocument {
       master._updateTime = serverTime;
       master._data = data;
       master._exists = true;
-      master._version = version;
+      master._version = context.version;
       incStat(datasource, 'writes');
       datasource.changes.push(meta);
     } else {
@@ -2193,35 +2244,34 @@ class MasterDocument extends InternalDocument {
   }
 
   static delete<T extends DocumentData>(
-    datasource: Datasource,
-    version: number,
-    serverTime: Timestamp,
+    context: OpContext,
     path: string
   ): MetaDocumentNotExists<T> {
+    const datasource = context.datasource;
     const master = datasource.docs.get(path);
     if (!master?.exists) {
       incStat(datasource, 'noopDeletes');
       return notExistsMetaDoc(
-        serverTime,
+        context,
         master?.pathData ?? datasource.pathData(path, 'document'),
         master
       );
     }
     // structure changed: an active doc was removed
     const prev = master.pushHistory();
-    master._updateTime = serverTime;
+    master._updateTime = context.serverTime;
     master._data = undefined;
     master._exists = false;
-    master._version = version;
+    master._version = context.version;
     master.parent?.decrementActiveDocs();
     datasource.invalidateStats();
     incStat(datasource, 'deletes');
 
     const meta = notExistsMetaDoc<T>(
-      serverTime,
+      context,
       master.pathData,
       master,
-      readMetaDoc(prev.updateTime, master, prev)
+      readMetaDoc(context, master, prev, prev.updateTime)
     );
     datasource.changes.push(meta);
 
@@ -2243,24 +2293,24 @@ class MasterDocument extends InternalDocument {
   }
 
   getSnapshot<T extends DocumentData>(
-    serverTime: Timestamp,
+    context: OpContext,
     readTime: Timestamp
   ): MetaDocument<T> {
     const readTimeMillis = readTime.toMillis();
     if (readTimeMillis >= this.updateTime.toMillis())
-      return readMetaDoc(serverTime, this, this);
+      return readMetaDoc(context, this, this);
 
     // Enforce the Firestore maximum historic read-time of 60 seconds
-    if (serverTime.toMillis() - readTimeMillis > SIXTY_SECONDS)
-      return notExistsMetaDoc(serverTime, this.pathData, this);
+    if (context.serverTime.toMillis() - readTimeMillis > SIXTY_SECONDS)
+      return notExistsMetaDoc(context, this.pathData, this);
 
     for (let i = this._history.length - 1; i >= 0; i--) {
       const historic = this._history[i];
       if (readTimeMillis >= historic.updateTime.toMillis())
-        return readMetaDoc(serverTime, this, historic);
+        return readMetaDoc(context, this, historic);
     }
 
-    return notExistsMetaDoc(serverTime, this.pathData, this);
+    return notExistsMetaDoc(context, this.pathData, this);
   }
 
   *getCollectionIterator(): IterableIterator<InternalCollection> {
@@ -2316,10 +2366,11 @@ class HistoricDocument extends InternalDocument {
  *
  * @template T - The type of the document's data.
  *
- * @param serverTime - The current "read time" used for the snapshot. Typically the server time
- *   associated with the read request.
+ * @param context - The operation context.
  * @param master - The canonical document entry in the index, including path and leaf document status.
  * @param version - The internal document version to be materialized. May represent a missing document.
+ * @param serverTime - The optional server timestamp (overrides the `OpContext` timestamp) to use for the document's `serverTime`.
+ * Used to properly align previous/snapshot versions.
  * @param showMissing - If `true`, returns a snapshot even if the document does not exist, provided the parent
  *   has active leaf documents. Defaults to `false`.
  *
@@ -2331,13 +2382,23 @@ class HistoricDocument extends InternalDocument {
  * There is no requirement to support historic missing document state in earlier snapshotted versions.
  */
 function readMetaDoc<T extends DocumentData>(
-  serverTime: Timestamp,
+  context: OpContext,
   master: MasterDocument,
   version: InternalDocument,
+  serverTime?: Timestamp,
   showMissing = false
 ): MetaDocument<T> {
+  if (serverTime == undefined) {
+    serverTime = context.serverTime;
+  }
   if (!version.exists && !(showMissing && master.hasActiveLeafDocs))
-    return notExistsMetaDoc(serverTime, master.pathData, master);
+    return notExistsMetaDoc(
+      context,
+      master.pathData,
+      master,
+      undefined,
+      serverTime
+    );
 
   // Reference a snapshot, because if `version` is the master it may change.
   const data = version.data as T | undefined;
@@ -2347,6 +2408,7 @@ function readMetaDoc<T extends DocumentData>(
   }
 
   const result: MetaDocument<T> = {
+    epoch: context.epoch,
     data,
     exists: version.exists,
     id: master.pathData.id,
@@ -2372,8 +2434,7 @@ function readMetaDoc<T extends DocumentData>(
  *
  * @template T - The type of the document's data.
  *
- * @param version - The new logical version number assigned to the document.
- * @param serverTime - The server timestamp to use for the document's `updateTime` (and possibly `createTime`).
+ * @param context - The operation context.
  * @param master - The canonical document entry before the write. May represent an existing or non-existent document.
  * @param data - The new document data to be written.
  *
@@ -2381,15 +2442,17 @@ function readMetaDoc<T extends DocumentData>(
  *   if the write caused changes to the data.
  */
 function writeMetaDoc<T extends DocumentData>(
-  version: number,
-  serverTime: Timestamp,
+  context: OpContext,
   master: MasterDocument,
   data: T
 ): MetaDocument<T> {
   function cloneData(): T {
     return cloneDocumentData(data);
   }
+
+  const serverTime = context.serverTime;
   const result: MetaDocument<T> = {
+    epoch: context.epoch,
     data,
     exists: true,
     id: master.pathData.id,
@@ -2398,16 +2461,17 @@ function writeMetaDoc<T extends DocumentData>(
     serverTime,
     createTime: master.exists ? master.createTime : serverTime,
     updateTime: serverTime,
-    version,
+    version: context.version,
     hasChanges: !deepDocumentDataEqual(data, master.data),
     cloneData,
   };
 
   if (result.hasChanges) {
     (result as Mutable<MetaDocument<T>>).previous = readMetaDoc(
-      master.updateTime,
+      context,
       master,
-      master
+      master,
+      master.updateTime
     );
   }
 
@@ -2422,31 +2486,35 @@ function writeMetaDoc<T extends DocumentData>(
  *
  * @template T - The type of the document's data (always `undefined` in this case).
  *
- * @param serverTime - The "read time" for the snapshot, typically the server timestamp associated with the read.
+ * @param context - The operation context.
  * @param pathData - Path metadata identifying the document (its path and ID).
  * @param previousVersion - Optional prior document version. If it was an existing document, this result will be marked
  *   with `hasChanges = true` and will carry the frozen `previousVersion` as `.previous`.
+ * @param serverTime - The optional server timestamp (overrides the `OpContext` timestamp) to use for the document's `serverTime`.
+ * Used to properly align previous/snapshot versions.
  *
  * @returns A frozen `MetaDocumentNotExists<T>` representing a non-existent document snapshot at the given time.
  */
 function notExistsMetaDoc<T extends DocumentData>(
-  serverTime: Timestamp,
+  context: OpContext,
   pathData: PathData,
   master: MasterDocument | undefined,
-  previousVersion?: MetaDocument<T>
+  previousVersion?: MetaDocument<T>,
+  serverTime?: Timestamp
 ): MetaDocumentNotExists<T> {
   function cloneData(): undefined {
     return undefined;
   }
 
   const result: MetaDocumentNotExists<T> = {
+    epoch: context.epoch,
     data: undefined,
     exists: false,
     hasChanges: previousVersion?.exists === true,
     id: pathData.id,
     parent: pathData.parentPath,
     path: pathData.path,
-    serverTime,
+    serverTime: serverTime ?? context.serverTime,
     updateTime: master?.updateTime ?? Zero,
     version: master?.version ?? 0,
     cloneData,

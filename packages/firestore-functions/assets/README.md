@@ -206,7 +206,7 @@ You can attach a **synchronous predicate** to any registered trigger to **gate**
 ```ts
 // Continuing from the Quick start example...
 
-let count = 0;
+let enabled = true;
 
 // v1: only run when `enabled` is true
 const disposeV1 = bridgeV1.registerTrigger(
@@ -214,7 +214,7 @@ const disposeV1 = bridgeV1.registerTrigger(
   v1.firestore.document('users/{uid}').onCreate(async (snap, ctx) => {
     // ... your v1 handler ...
   }),
-  () => count++ > 0
+  () => enabled
 );
 
 // v2: only run for a specific route param (e.g., uid starts with "test-")
@@ -261,6 +261,7 @@ constructor(
 
 **Lifecycle & control**
 
+- `epoch: number` — The database **epoch** the orchestrator is currently bound to. Only trigger events whose stamped epoch matches this value are processed; events from prior/reset epochs are ignored to ensure test isolation and prevent leakage of late async work from earlier runs. The `epoch` automatically rebinds whenever the bound database is reset.
 - `suspended: boolean` — When `true`, blocks new invocations at the registration gate (handlers are not entered; stats/observers do not change).
 - `attach(): void` — Enables **all** registered triggers (does not clear observers/waiters).
 - `detach(): void` — Disables all triggers, **clears observers**, and **cancels active waiters**. Stats are not cleared.
@@ -271,9 +272,11 @@ constructor(
 
 **Stats & observation**
 
-- `getStats(key: TKey): TriggerStats<TKey>` — Immutable snapshot of per‑key counters.
+- `getStats(key: TKey): TriggerStats<TKey>` — Immutable snapshot of per-key counters.
 - `observe(key: TKey, observer: TriggerObserver<TKey>): () => void` — Attach `before`/`after`/`error` hooks for a key.
-- ` on(key: TKey, callback: (arg: OrchestratorEventArg<TKey>) => void ): () => void` — Attach an `after` hook for a key.
+- `on(key: TKey, callback: (arg: OrchestratorEventArg<TKey>) => void): () => void` — Attach an `after` hook for a key.
+- `observeAll(observer: TriggerObserver<TKey>): () => void` — Attach the same observer to **all currently registered triggers**. Its `before`, `after`, and `error` callbacks fire for every trigger key using the same semantics as `observe`. Returns an unsubscribe function that removes the observer from all keys.
+- `onAll(callback: (arg: OrchestratorEventArg<TKey>) => void): () => void` — Register the same **post-invocation** (`after`) callback for all registered triggers. Equivalent to `observeAll({ after: callback })`. Returns an unsubscribe function that removes this callback from all keys.
 - `watchErrors(cb: TriggerErrorWatcher<TKey>): () => void` — Global watcher for any error raised by a trigger or observer.
 
 **Deterministic waiting**
@@ -281,7 +284,7 @@ constructor(
 - `waitOne(key: TKey, options?: WaitOptions): Promise<OrchestratorEventArg<TKey>>` — Wait for the **next success** for a key.
 - `wait(key: TKey, predicate: (e: OrchestratorEventArg<TKey>) => boolean, options?: WaitOptions)` — Wait until a **predicate** over the extended event arg matches.
 - `waitOneError(key: TKey, options?: WaitErrorOptions): Promise<OrchestratorErrorEventArg<TKey>>` — Wait for the **next failure** for a key.
-- Error counterpart: `waitError(key, predicate, options)`.
+- `waitError(key: TKey, predicate: (arg: OrchestratorErrorEventArg<TKey>) => boolean, options?: WaitErrorOptions): Promise<OrchestratorErrorEventArg<TKey>>` — Wait until a **predicate** over the error event arg matches.
 
 **WaitOptions**
 

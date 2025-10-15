@@ -65,6 +65,55 @@ export interface FirestoreControllerOptions {
 }
 
 /**
+ * Discrete lifecycle transitions emitted by a {@link FirestoreController}.
+ *
+ * - `'delete'` — The database has been **permanently disposed**. All resources
+ *   held by the controller are released and no further operations against this
+ *   instance are expected to succeed.
+ * - `'reset'` — The database has been **cleared back to an empty state** and its `epoch` incremented
+ * while keeping the same controller instance. This is typically used between tests to
+ * guarantee isolation without tearing down the process.
+ *
+ * @remarks
+ * Use these event types to distinguish teardown vs. in-place reinitialization
+ * when coordinating triggers, listeners, or other observers.
+ */
+export type DatabaseLifecycleEventType = 'delete' | 'reset';
+
+/**
+ * Payload describing a lifecycle transition of a {@link FirestoreController}.
+ *
+ * @public
+ */
+export interface DatabaseLifecycleEventArg {
+  /**
+   * The kind of lifecycle transition that occurred.
+   *
+   * - `'delete'` — The controller has been torn down and will not emit further
+   *   events.
+   * - `'reset'` — The controller remains valid, but its underlying database
+   *   contents have been cleared to a pristine state and its `epoch` incremented.
+   *
+   * @see DatabaseLifecycleEventType
+   */
+  type: DatabaseLifecycleEventType;
+  /**
+   * The `epoch` of the underlying database when the event was raised.
+   */
+  epoch: number;
+
+  /**
+   * The controller instance whose database underwent the transition.
+   *
+   * @remarks
+   * On `'reset'`, consumers can re-establish data/fixtures or rebind observers
+   * against this controller. On `'delete'`, consumers should release references
+   * and unsubscribe from any observers associated with this controller.
+   */
+  database: FirestoreController;
+}
+
+/**
  * Structural shim for augmenting a `Firestore` instance with access to the
  * Admin SDK’s internal GAPIC client pool.
  *
@@ -255,6 +304,7 @@ export class FirestoreMock {
 export class FirestoreController {
   private _accessor: DataAccessor | undefined;
   private _statWatchers = new Listeners<FirestoreMockStats>();
+  private _lifecycleWatchers = new Listeners<DatabaseLifecycleEventArg>();
 
   /** The project ID for this mock database. */
   readonly projectId: string;
@@ -307,6 +357,13 @@ export class FirestoreController {
         this._statWatchers.next(this.formatStats(stats));
       }
     });
+    this._accessor.registerResetListener((epoch) => {
+      this._lifecycleWatchers.next({
+        type: 'reset',
+        epoch,
+        database: this,
+      });
+    });
   }
 
   /**
@@ -339,6 +396,21 @@ export class FirestoreController {
   }
 
   /**
+   * The monotonically increasing database epoch identifier.
+   *
+   * - **Increments only when the database is reset** (never for reads/writes/commits).
+   * - Remains constant for the entire lifetime of a given database instance between resets.
+   * - When combined with {@link version()} (the commit sequence number), `(epoch, version)`
+   *   provides a stable total ordering key across resets.
+   */
+  epoch(): number {
+    this.assertExists();
+
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    return this._accessor!.epoch;
+  }
+
+  /**
    * The monotonically increasing atomic commit version of the database.
    *
    * @returns The database commit version.
@@ -360,9 +432,19 @@ export class FirestoreController {
    */
   delete(): void {
     if (this.exists()) {
+      const epoch = this.epoch();
       this._pool.delete(this.projectId, this.databaseId);
       this._statWatchers.clear();
-      this._accessor = undefined;
+      try {
+        this._lifecycleWatchers.next({
+          type: 'delete',
+          epoch,
+          database: this,
+        });
+      } finally {
+        this._lifecycleWatchers.clear();
+        this._accessor = undefined;
+      }
     }
   }
 
@@ -412,6 +494,29 @@ export class FirestoreController {
     this.formatStats(this._accessor!.getStats());
 
     return this._statWatchers.register(statsWatcher);
+  }
+
+  /**
+   * Registers a watcher function to receive **database lifecycle events** emitted
+   * by this {@link FirestoreController}.
+   *
+   * - Fires on `'reset'` when the underlying database is cleared but the
+   *   controller remains usable.
+   * - Fires on `'delete'` when the controller/database is permanently disposed.
+   * - Returns a function to deregister the watcher.
+   * - Throws if the database has already been deleted.
+   *
+   * @param lifecycleWatcher Callback invoked for each lifecycle transition with a
+   *   {@link DatabaseLifecycleEventArg} describing the event and source controller.
+   * @returns Deregistration function.
+   * @throws {Error} If this database has been deleted.
+   */
+  watchLifecycle(
+    lifecycleWatcher: (arg: DatabaseLifecycleEventArg) => void
+  ): () => void {
+    this.assertExists();
+
+    return this._lifecycleWatchers.register(lifecycleWatcher);
   }
 
   /**
