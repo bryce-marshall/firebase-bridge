@@ -266,6 +266,7 @@ constructor(
 - `attach(): void` — Enables **all** registered triggers (does not clear observers/waiters).
 - `detach(): void` — Disables all triggers, **clears observers**, and **cancels active waiters**. Stats are not cleared.
 - `reset(): void` — Detaches, zeroes all counters, and re‑attaches every registered trigger.
+- `dipose(): void` — Releases all resources and dipsoses the instance.
 - `all(enable: boolean): void` — Enable/disable all triggers at once.
 - `enable(...keys: TKey[]): void` / `disable(...keys: TKey[]): void` — Per‑key enable/disable (throws if a key wasn’t registered).
 - `isEnabled(key: TKey): boolean` — Current enable state.
