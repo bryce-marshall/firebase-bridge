@@ -100,8 +100,28 @@ export function toProtoTimestamp(
  * @param fieldPath - Dot-separated string representation of a field path.
  * @returns An array of field path segments.
  */
+/**
+ * Compatibility wrapper for mask strings coming from outside your serializer.
+ * - First tries strict parsing.
+ * - If that fails *and* the string contains no backticks at all, falls back to
+ *   a literal split on '.' with minimal validation (no empty segments).
+ */
 export function parseFieldPath(fieldPath: string): string[] {
-  if (!fieldPath || typeof fieldPath !== 'string') {
+  try {
+    return parseFieldPathStrict(fieldPath);
+  } catch (e) {
+    // If the producer never used quoting, emulate emulator lenience.
+    if (fieldPath.indexOf('`') === -1) {
+      const parts = fieldPath.split('.');
+      if (parts.some((p) => p.length === 0)) throw e; // still invalid
+      return parts; // accept literal segments like "-ObaMy..."
+    }
+    throw e;
+  }
+}
+
+export function parseFieldPathStrict(fieldPath: string): string[] {
+  if (typeof fieldPath !== 'string' || fieldPath.length === 0) {
     throw googleError(
       Status.INVALID_ARGUMENT,
       'Field path must be a non-empty string.'
@@ -109,70 +129,119 @@ export function parseFieldPath(fieldPath: string): string[] {
   }
 
   const segments: string[] = [];
+  const quotedFlags: boolean[] = [];
+
   const buf: string[] = [];
-  let inBackticks = false;
+  let inQuoted = false;
+  let segWasQuoted = false;
   let i = 0;
 
-  while (i < fieldPath.length) {
-    const char = fieldPath[i];
+  const pushSegment = () => {
+    if (buf.length === 0) {
+      throw googleError(
+        Status.INVALID_ARGUMENT,
+        `Invalid field path "${fieldPath}": empty segment.`
+      );
+    }
+    segments.push(buf.join(''));
+    quotedFlags.push(segWasQuoted);
+    buf.length = 0;
+    segWasQuoted = false;
+  };
 
-    if (char === '`') {
-      if (!inBackticks) {
-        // Starting quoted segment
-        if (buf.length > 0) {
+  while (i < fieldPath.length) {
+    const ch = fieldPath[i];
+
+    if (inQuoted) {
+      // Backslash escapes inside quotes: \` or \\
+      if (ch === '\\') {
+        if (i + 1 >= fieldPath.length) {
           throw googleError(
             Status.INVALID_ARGUMENT,
-            `Invalid field path "${fieldPath}": unexpected backtick in unquoted identifier.`
+            `Invalid field path "${fieldPath}": dangling escape in quoted segment.`
           );
         }
-        inBackticks = true;
-      } else {
-        // Possible end of quoted segment or escaped backtick
-        if (i + 1 < fieldPath.length && fieldPath[i + 1] === '`') {
-          // Escaped backtick (`` -> `)
-          buf.push('`');
-          i++; // Skip the second backtick
-        } else {
-          // End of quoted segment
-          inBackticks = false;
+        const next = fieldPath[i + 1];
+        if (next !== '`' && next !== '\\') {
+          throw googleError(
+            Status.INVALID_ARGUMENT,
+            `Invalid field path "${fieldPath}": invalid escape "\\${next}" in quoted segment.`
+          );
         }
+        buf.push(next);
+        i += 2;
+        continue;
       }
-    } else if (char === '.' && !inBackticks) {
-      if (buf.length === 0) {
-        throw googleError(
-          Status.INVALID_ARGUMENT,
-          `Invalid field path "${fieldPath}": empty segment.`
-        );
+
+      // Compatibility: doubled backtick inside quotes -> literal backtick
+      if (ch === '`' && i + 1 < fieldPath.length && fieldPath[i + 1] === '`') {
+        buf.push('`');
+        i += 2;
+        continue;
       }
-      segments.push(buf.join(''));
-      buf.length = 0;
-    } else {
-      buf.push(char);
+
+      // Closing backtick
+      if (ch === '`') {
+        inQuoted = false;
+        i++;
+        // After a quoted segment we expect . or end; anything else is invalid
+        if (i < fieldPath.length && fieldPath[i] !== '.') {
+          throw googleError(
+            Status.INVALID_ARGUMENT,
+            `Invalid field path "${fieldPath}": unexpected characters after closing backtick.`
+          );
+        }
+        continue;
+      }
+
+      // Regular char inside quotes
+      buf.push(ch);
+      i++;
+      continue;
     }
 
+    // Not inside quotes
+    if (ch === '.') {
+      pushSegment();
+      i++;
+      continue;
+    }
+
+    if (ch === '`') {
+      if (buf.length > 0) {
+        throw googleError(
+          Status.INVALID_ARGUMENT,
+          `Invalid field path "${fieldPath}": unexpected backtick inside an unquoted segment.`
+        );
+      }
+      inQuoted = true;
+      segWasQuoted = true;
+      i++;
+      continue;
+    }
+
+    buf.push(ch);
     i++;
   }
 
-  if (inBackticks) {
+  if (inQuoted) {
     throw googleError(
       Status.INVALID_ARGUMENT,
       `Invalid field path "${fieldPath}": unmatched backtick.`
     );
   }
 
-  if (buf.length > 0) {
-    segments.push(buf.join(''));
-  }
+  // Push final segment
+  pushSegment();
 
-  // Validate unquoted segments
-  const identifierRegex = /^[a-zA-Z_][a-zA-Z_0-9]*$/;
-  for (const seg of segments) {
-    const isQuoted = seg.startsWith('`') && seg.endsWith('`');
-    if (!isQuoted && !identifierRegex.test(seg)) {
+  // Validate only the unquoted ones
+  const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+  for (let idx = 0; idx < segments.length; idx++) {
+    if (!quotedFlags[idx] && !IDENT.test(segments[idx])) {
       throw googleError(
         Status.INVALID_ARGUMENT,
-        `Invalid field path segment "${seg}" in path "${fieldPath}". ` +
-          'Unquoted segments must match /^[a-zA-Z_][a-zA-Z_0-9]*$/.'
+        `Invalid field path segment "${segments[idx]}" in path "${fieldPath}". ` +
+          'Unquoted segments must match /^[A-Za-z_][A-Za-z0-9_]*$/.'
       );
     }
   }

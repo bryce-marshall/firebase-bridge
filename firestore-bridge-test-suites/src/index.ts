@@ -1,4 +1,5 @@
 export * from './lib/aggregations-suite.js';
+export * from './lib/backticked-field-paths-suite.js';
 export * from './lib/collection-group-queries-suite.js';
 export * from './lib/collection-on-snapshot-suite.js';
 export * from './lib/concurrency-and-visibility-suite.js';
