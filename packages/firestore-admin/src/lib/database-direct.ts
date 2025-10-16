@@ -54,7 +54,8 @@ export class DatabaseDirect {
 
   /**
    * Register a low-level trigger callback that will be invoked for document
-   * changes produced by atomic commits.
+   * changes produced by atomic commits. Automatically unregistered whenever `reset()`
+   * is called.
    *
    * @param trigger - Trigger descriptor.
    * @returns A function that unregisters the trigger when called.
@@ -81,8 +82,8 @@ export class DatabaseDirect {
   }
 
   /**
-   * Reset the database to a pristine state, clearing documents and internal
-   * state (timestamps, counters) as defined by the accessor.
+   * Reset the database to a pristine state, clearing documents, triggers, and internal
+   * state (timestamps, counters, version) as defined by the accessor.
    */
   reset(): void {
     this._accessor.reset();
