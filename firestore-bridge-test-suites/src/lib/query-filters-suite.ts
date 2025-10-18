@@ -524,5 +524,20 @@ export function queryFiltersSuite(context: FirestoreBridgeTestContext) {
         new Set([db.collection(COLLECTION_ID).doc(ids.n2).path])
       );
     });
+
+    it('transaction: filtered query via tx.get() returns empty when no match', async () => {
+      const docs = await db.runTransaction(async (tx) => {
+        const q = db
+          .collection(COLLECTION_ID)
+          .where('kind', '==', 'nums')
+          .where('v', '==', 999); // no seeded doc has v=999
+
+        const snap = await tx.get(q);
+        return snap.docs;
+      });
+
+      expect(docs.length).toBe(0);
+      expectPaths(docs as unknown as Array<{ ref: { path: string } }>, []);
+    });
   });
 }

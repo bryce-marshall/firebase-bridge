@@ -180,19 +180,13 @@ export class QueryBuilder {
           const response: google.firestore.v1.IRunQueryResponse = {
             document: arg.context.serializeDoc(meta, builder.fieldMask),
           };
-          if (arg.readTime) {
-            response.readTime = toProtoTimestamp(arg.readTime);
-          }
-          if (arg.transaction) {
-            response.transaction = arg.transaction;
-          }
+          assignCommonQueryResponse(arg, response);
 
           arg.stream.push(response);
         }
       } else {
-        const emptyResult: google.firestore.v1.IRunQueryResponse = {
-          readTime: arg.readTime,
-        };
+        const emptyResult: google.firestore.v1.IRunQueryResponse =
+          assignCommonQueryResponse(arg, {});
         arg.stream.push(emptyResult);
       }
     });
@@ -401,12 +395,7 @@ export class QueryBuilder {
         result: { aggregateFields: out },
       };
 
-      if (arg.readTime) {
-        response.readTime = toProtoTimestamp(arg.readTime);
-      }
-      if (arg.transaction) {
-        response.transaction = arg.transaction;
-      }
+      assignCommonQueryResponse(arg, response);
 
       arg.stream.push(response);
     });
@@ -915,4 +904,19 @@ export function buildFindNearestTransformer(
       context.serializer.decodeValue(qv) as VectorLike
     ) as number[];
   }
+}
+
+function assignCommonQueryResponse<
+  T extends
+    | google.firestore.v1.IRunQueryResponse
+    | google.firestore.v1.IRunAggregationQueryResponse
+>(arg: QueryResolverArg, response: T): T {
+  if (arg.readTime) {
+    response.readTime = toProtoTimestamp(arg.readTime);
+  }
+  if (arg.transaction) {
+    response.transaction = arg.transaction;
+  }
+
+  return response;
 }
