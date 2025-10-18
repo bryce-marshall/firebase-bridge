@@ -444,5 +444,85 @@ export function queryFiltersSuite(context: FirestoreBridgeTestContext) {
       // Only r2 matches: r1 excluded by list; r3 excluded (missing ref)
       expectPaths(qs.docs, [ids.r2]);
     });
+
+    //
+    // Queries in transactions
+    //
+    it('transaction: single filtered query (== on number) returns expected docs', async () => {
+      const expectedPath = db.collection(COLLECTION_ID).doc(ids.n2).path;
+
+      const paths = await db.runTransaction(async (tx) => {
+        const q = db
+          .collection(COLLECTION_ID)
+          .where('kind', '==', 'nums')
+          .where('v', '==', 2);
+
+        const snap = await tx.get(q);
+        return snap.docs.map((d) => d.ref.path);
+      });
+
+      expect(paths).toHaveLength(1);
+      expect(paths[0]).toBe(expectedPath);
+    });
+
+    it('transaction: two filtered queries in a single transaction (array-contains + reference in)', async () => {
+      const refOne = db.collection(`${COLLECTION_ID}-targets`).doc('one');
+      const refTwo = db.collection(`${COLLECTION_ID}-targets`).doc('two');
+
+      const { arrayPaths, refPaths } = await db.runTransaction(async (tx) => {
+        const q1 = db
+          .collection(COLLECTION_ID)
+          .where('kind', '==', 'arrays')
+          .where('arr', 'array-contains', 'x');
+
+        const q2 = db
+          .collection(COLLECTION_ID)
+          .where('kind', '==', 'refs')
+          .where('ref', 'in', [refOne, refTwo]);
+
+        const [s1, s2] = await Promise.all([tx.get(q1), tx.get(q2)]);
+
+        return {
+          arrayPaths: s1.docs.map((d) => d.ref.path),
+          refPaths: s2.docs.map((d) => d.ref.path),
+        };
+      });
+
+      // Validate array-contains 'x'
+      expect(new Set(arrayPaths)).toEqual(
+        new Set([
+          db.collection(COLLECTION_ID).doc(ids.a1).path,
+          db.collection(COLLECTION_ID).doc(ids.a2).path,
+          db.collection(COLLECTION_ID).doc(ids.a3).path,
+        ])
+      );
+
+      // Validate ref in [one, two]
+      expect(new Set(refPaths)).toEqual(
+        new Set([
+          db.collection(COLLECTION_ID).doc(ids.r1).path,
+          db.collection(COLLECTION_ID).doc(ids.r2).path,
+        ])
+      );
+    });
+
+    it('transaction: range+membership filters are honored inside a transaction', async () => {
+      const paths = await db.runTransaction(async (tx) => {
+        // Restrict to numeric universe and apply range guards + not-in
+        const q = db
+          .collection(COLLECTION_ID)
+          .where('kind', '==', 'nums')
+          .where('v', '>=', 0)
+          .where('v', '<=', 3)
+          .where('v', 'not-in', [1, 3]);
+
+        const snap = await tx.get(q);
+        return snap.docs.map((d) => d.ref.path);
+      });
+
+      expect(new Set(paths)).toEqual(
+        new Set([db.collection(COLLECTION_ID).doc(ids.n2).path])
+      );
+    });
   });
 }

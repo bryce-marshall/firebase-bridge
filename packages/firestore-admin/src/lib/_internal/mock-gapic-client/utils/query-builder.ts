@@ -19,9 +19,10 @@ import {
 } from '../../functions/util.js';
 import { Mutable } from '../../internal-types.js';
 import { GapicContext } from '../gapic-context.js';
-import { setDeepValue } from './deep-value.js';
+import { StreamEndpoint } from '../stream-endpoint.js';
 import { assertFieldArgument, assertRequestArgument } from './assert.js';
 import { compareValues, getComparable } from './compare-values.js';
+import { setDeepValue } from './deep-value.js';
 import { Operators } from './operators.js';
 import {
   buildQueryValidationData,
@@ -32,7 +33,6 @@ import {
   validateOrderByPresenceForInequalities,
   validateWhereFilterCompatibility,
 } from './query-validation.js';
-import { StreamEndpoint } from '../stream-endpoint.js';
 import { TransactionHelper } from './transaction-helper.js';
 import { validateTransactionOptions } from './transaction-validation.js';
 import { NAME_SENTINEL } from './types.js';
@@ -146,6 +146,8 @@ export class QueryBuilder {
     this.readTime = request.readTime
       ? (Timestamp as unknown as TimestampFromProto).fromProto(request.readTime)
       : undefined;
+    this.transaction = request.transaction;
+    this.newTransaction = request.newTransaction;
     this.wherePredicate = defaultPredicate;
     this.cursorPredicate = defaultPredicate;
     this.orderByComparator = defaultComparator;
@@ -184,6 +186,7 @@ export class QueryBuilder {
           if (arg.transaction) {
             response.transaction = arg.transaction;
           }
+
           arg.stream.push(response);
         }
       } else {
@@ -396,13 +399,20 @@ export class QueryBuilder {
 
       const response: google.firestore.v1.IRunAggregationQueryResponse = {
         result: { aggregateFields: out },
-        readTime: arg.readTime,
       };
+
+      if (arg.readTime) {
+        response.readTime = toProtoTimestamp(arg.readTime);
+      }
+      if (arg.transaction) {
+        response.transaction = arg.transaction;
+      }
 
       arg.stream.push(response);
     });
 
     builder.applyStructureQuery(context, query);
+
     return builder;
   }
 

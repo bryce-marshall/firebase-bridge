@@ -14,9 +14,9 @@ import { GapicContext } from './gapic-context.js';
 import { TargetListenerManager } from './listeners/target-listener-manager.js';
 import { NoOpStreamEndpoint, StreamCollection } from './stream-endpoint.js';
 import { assertRequestArgument } from './utils/assert.js';
+import { transformWrites } from './utils/convert.js';
 import { QueryBuilder } from './utils/query-builder.js';
 import { TransactionHelper } from './utils/transaction-helper.js';
-import { transformWrites } from './utils/convert.js';
 
 export class MockGapicClient implements GapicClient {
   private _terminated = false;
