@@ -93,6 +93,72 @@ export function writeBatchingAndBulkWriterSuite(
         expect(d.b).toBe(2);
         expect(d.c).toBe(3);
       });
+
+      // --- WriteBatch: deletes ---
+
+      it('delete removes an existing document', async () => {
+        const ref = col().doc('wb-del-existing');
+        await ref.set({ a: 1 });
+
+        const batch = Firestore.batch();
+        batch.delete(ref);
+        await batch.commit();
+
+        const snap = await ref.get();
+        expect(snap.exists).toBe(false);
+      });
+
+      it('delete on a missing document succeeds (no-op)', async () => {
+        const ref = col().doc('wb-del-missing');
+
+        const batch = Firestore.batch();
+        batch.delete(ref); // no precondition -> should succeed as a no-op
+        await batch.commit();
+
+        const snap = await ref.get();
+        expect(snap.exists).toBe(false);
+      });
+
+      it('delete with { exists:true } on missing rejects and batch is atomic', async () => {
+        const ok = col().doc('wb-del-atomic-ok');
+        const missing = col().doc('wb-del-atomic-missing');
+
+        const batch = Firestore.batch();
+        batch.set(ok, { ok: true });
+        batch.delete(missing, { exists: true }); // should cause NOT_FOUND
+        batch.set(col().doc('wb-del-atomic-never'), { never: true });
+
+        await ExpectError.async(() => batch.commit(), {
+          code: Status.NOT_FOUND,
+        });
+
+        // Nothing should have been written
+        const [a, b] = await Promise.all([ok.get(), missing.get()]);
+        expect(a.exists).toBe(false);
+        expect(b.exists).toBe(false);
+      });
+
+      it('applies multiple ops to same doc with delete in sequence', async () => {
+        const ref1 = col().doc('wb-del-order-1');
+        const ref2 = col().doc('wb-del-order-2');
+
+        // Case 1: set -> delete ==> final: not exists
+        const b1 = Firestore.batch();
+        b1.set(ref1, { v: 1 });
+        b1.delete(ref1);
+        await b1.commit();
+        const s1 = await ref1.get();
+        expect(s1.exists).toBe(false);
+
+        // Case 2: delete -> set(merge) ==> final: exists with data
+        const b2 = Firestore.batch();
+        b2.delete(ref2);
+        b2.set(ref2, { v: 2 }, { merge: true });
+        await b2.commit();
+        const s2 = await ref2.get();
+        const d2 = s2.data() as DocumentData;
+        expect(d2).toEqual({ v: 2 });
+      });
     });
 
     //#endregion
@@ -268,6 +334,135 @@ export function writeBatchingAndBulkWriterSuite(
         expect(sampleError).toBeDefined();
         expect(typeof sampleError?.code).toBe('number');
         expect(typeof sampleError?.documentRefPath).toBe('string');
+        expect(sampleError?.failedAttempts).toBeGreaterThanOrEqual(1);
+        expect(typeof sampleError?.message).toBe('string');
+      });
+
+      // --- BulkWriter: deletes ---
+
+      it('delete existing document: success fires and document is gone', async () => {
+        const ref = col().doc('bw-del-existing');
+        await ref.set({ a: 1 });
+
+        const writer = Firestore.bulkWriter();
+
+        let success = 0;
+        let sawPath: string | undefined;
+
+        writer.onWriteResult((r, res) => {
+          success++;
+          sawPath = r.path;
+          expect(res.writeTime).toBeInstanceOf(Timestamp);
+        });
+
+        const p = writer.delete(ref);
+        await writer.close();
+
+        await p;
+        expect(success).toBe(1);
+        expect(sawPath).toBe(ref.path);
+
+        const snap = await ref.get();
+        expect(snap.exists).toBe(false);
+      });
+
+      it('delete missing without precondition succeeds (no-op) and triggers success callback', async () => {
+        const ref = col().doc('bw-del-missing-no-pre');
+
+        const writer = Firestore.bulkWriter();
+        let success = 0;
+
+        writer.onWriteResult(() => {
+          success++;
+        });
+
+        const p = writer.delete(ref);
+        await writer.close();
+
+        await p;
+        expect(success).toBe(1);
+
+        const snap = await ref.get();
+        expect(snap.exists).toBe(false);
+      });
+
+      it('delete missing with { exists:true } routes to error; retry after create then succeeds', async () => {
+        const target = col().doc('bw-del-retry');
+
+        const writer = Firestore.bulkWriter();
+
+        let errorCount = 0;
+        let successCount = 0;
+        let created = false;
+
+        writer.onWriteResult(() => {
+          successCount++;
+        });
+
+        writer.onWriteError((err) => {
+          if (err.documentRef.path === target.path) {
+            errorCount++;
+            // Create doc so the retried delete can succeed
+            if (!created) {
+              created = true;
+              // enqueue a set; the retried delete will run after
+              writer.set(target, { temp: true });
+            }
+            return true; // allow retry
+          }
+          return false;
+        });
+
+        // First attempt must fail (doc missing + exists:true)
+        const p = writer.delete(target, { exists: true });
+
+        // Force first send so we see the failure and enqueue the set
+        await writer.flush();
+        await writer.close();
+
+        await p; // no throw in the end
+        // Note: p resolves successfully after retry; the above ensures no error path
+
+        expect(errorCount).toBeGreaterThanOrEqual(1);
+        // Two successes: one for the set, one for the successful retry delete
+        expect(successCount).toBe(2);
+
+        const snap = await target.get();
+        expect(snap.exists).toBe(false);
+      });
+
+      it('error payload for delete with { exists:true } includes code, documentRef, failedAttempts', async () => {
+        const ref = col().doc('bw-del-shape');
+        const writer = Firestore.bulkWriter();
+
+        let sampleError:
+          | {
+              code: number;
+              documentRefPath: string;
+              failedAttempts: number;
+              message: string;
+            }
+          | undefined;
+
+        writer.onWriteError((err) => {
+          sampleError = {
+            code: err.code,
+            documentRefPath: err.documentRef.path,
+            failedAttempts: err.failedAttempts,
+            message: err.message,
+          };
+          return false; // do not retry
+        });
+
+        const p = writer.delete(ref, { exists: true });
+        writer.close();
+
+        // await p;
+        await ExpectError.async(() => p, { code: Status.NOT_FOUND });
+
+        expect(sampleError).toBeDefined();
+        expect(typeof sampleError?.code).toBe('number');
+        expect(sampleError?.documentRefPath).toBe(ref.path);
         expect(sampleError?.failedAttempts).toBeGreaterThanOrEqual(1);
         expect(typeof sampleError?.message).toBe('string');
       });
