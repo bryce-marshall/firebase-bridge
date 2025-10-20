@@ -81,14 +81,16 @@ export function setDeepValue(
   value: unknown
 ): void {
   let current = target;
+  const lastIdx =  path.length - 1;
 
-  for (let i = 0; i < path.length - 1; i++) {
+  for (let i = 0; i < lastIdx; i++) {
     const segment = path[i];
 
+    const existing = current[segment];
     if (
-      current[segment] === undefined ||
-      typeof current[segment] !== 'object' ||
-      current[segment] === null
+      existing === undefined ||
+      typeof existing !== 'object' ||
+      existing === null
     ) {
       current[segment] = {};
     }
@@ -96,5 +98,5 @@ export function setDeepValue(
     current = current[segment];
   }
 
-  current[path[path.length - 1]] = value;
+  current[path[lastIdx]] = value;
 }

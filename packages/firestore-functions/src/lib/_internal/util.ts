@@ -253,7 +253,7 @@ function toDocumentSnapshot(
       typeof field === 'string'
         ? field.split('.')
         : // FieldPath.toString() returns a dotted form without escaping in Admin SDK;
-          // good enough for most test cases. Iffull escaping fidelity is requiered, add a parser.
+          // good enough for most test cases. If full escaping fidelity is required, add a parser.
           String(field).split('.');
     let cur = data;
     for (const p of parts) {

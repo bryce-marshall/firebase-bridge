@@ -1,12 +1,12 @@
 import {
+  AggregateField,
   DocumentData,
+  FieldPath,
+  FieldValue,
   Firestore,
   Timestamp,
-  FieldPath,
 } from 'firebase-admin/firestore';
-import { Status } from 'google-gax';
 import { normalizeDocData } from './helpers/document-data.js';
-import { ExpectError } from './helpers/expect.error.js';
 import { FirestoreBridgeTestContext } from './test-context.js';
 
 export function backtickedFieldPathsSuite(context: FirestoreBridgeTestContext) {
@@ -211,6 +211,206 @@ export function backtickedFieldPathsSuite(context: FirestoreBridgeTestContext) {
             [ODD.leadingDigit]: { k: 'ok' },
           },
         });
+      });
+    });
+
+    // ---------------------------------------------------------------------
+    // Queries (filters/order/aggregate) with odd/backticked paths
+    // ---------------------------------------------------------------------
+    describe('Queries: filters / aggregates / vector with odd/backticked paths', () => {
+      const subCol = () => col().doc('subdoc01').collection('subcol01');
+      // Seed a small fixture
+      beforeAll(async () => {
+        const base = subCol();
+
+        await Promise.all([
+          base.doc('q1').set({
+            _idxsup: {
+              [ODD.spaced]: {
+                v: 1,
+                n: 2,
+                tag: 'A',
+                vec: FieldValue.vector([0.1, 0.2, 0.3]),
+              },
+              [ODD.hyphen]: { v: 3, n: 5, tag: 'A' },
+              [ODD.leadingDigit]: { v: 4, n: 7, tag: 'B' },
+            },
+          }),
+          base.doc('q2').set({
+            _idxsup: {
+              [ODD.spaced]: {
+                v: 1,
+                n: 8,
+                tag: 'A',
+                vec: FieldValue.vector([0.0, 0.2, 0.4]),
+              },
+              [ODD.hyphen]: { v: 9, n: 1, tag: 'B' },
+            },
+          }),
+          base.doc('q3').set({
+            ['`_idxsup`']: { ['`with space`']: { ['`v`']: 42 } },
+          }),
+        ]);
+      });
+
+      it('filter with FieldPath over odd segment (space) matches as expected', async () => {
+        const qp = await subCol()
+          .where(new FieldPath('_idxsup', ODD.spaced, 'v'), '==', 1)
+          .get();
+        const ids = qp.docs.map((d) => d.id).sort();
+        expect(ids).toEqual(['q1', 'q2']);
+      });
+
+      it('filter with BACKTICK-quoted string is literal and only matches literal backtick keys', async () => {
+        const quoted = `\`_idxsup\`.\`${ODD.spaced}\`.\`v\``;
+        const qp = await subCol().where(quoted, '==', 42).get();
+        const ids = qp.docs.map((d) => d.id);
+        expect(ids).toEqual(['q3']); // only the literal backticked doc matches
+      });
+
+      it('orderBy on an odd path via FieldPath works', async () => {
+        const qs = await subCol()
+          .orderBy(new FieldPath('_idxsup', ODD.hyphen, 'n'))
+          .get();
+        // q2 has n=1 under hyphen; q1 has n=5
+        const ids = qs.docs.map((d) => d.id);
+        expect(ids[0]).toBe('q2');
+      });
+
+      it('aggregate: sum on odd path via FieldPath works', async () => {
+        const agg = await subCol()
+          .where(new FieldPath('_idxsup', ODD.spaced, 'tag'), '==', 'A')
+          .aggregate({
+            totalN: AggregateField.sum(
+              new FieldPath('_idxsup', ODD.spaced, 'n')
+            ),
+            countA: AggregateField.count(),
+          })
+          .get();
+        expect(agg.data().totalN).toBe(2 + 8);
+        expect(agg.data().countA).toBe(2);
+      });
+
+      // This is a current Firestore bug: https://github.com/firebase/firebase-tools/issues/8077
+      // it('vector search: findNearest using a quoted string path on odd segment', async () => {
+      //   const vectorField = `\`_idxsup\`.\`${ODD.spaced}\`.\`vec\``; // backtick-quoted string path
+
+      //   const res = await subCol()
+      //     .findNearest({
+      //       vectorField, // use string path, not FieldPath
+      //       queryVector: [0.09, 0.21, 0.31],
+      //       distanceMeasure: 'EUCLIDEAN',
+      //       limit: 1,
+      //     })
+      //     .get();
+
+      //   const ids = res.docs.map((d) => d.id);
+      //   expect(ids).toEqual(['q1']);
+      // });
+    });
+
+    // ---------------------------------------------------------------------
+    // Writes with transforms (sentinels) on odd/backticked paths
+    // ---------------------------------------------------------------------
+    describe('Transforms with odd/backticked field paths', () => {
+      it('set(..., {merge:true}) with object containing FieldValue.increment at odd path stores correctly', async () => {
+        const doc = col().doc('tf-inc-object');
+        await doc.set({}); // ensure exists
+
+        // Increment at _idxsup["0abc"].n and _idxsup["with space"].n via object nesting
+        await doc.set(
+          {
+            _idxsup: {
+              [ODD.leadingDigit]: { n: FieldValue.increment(2) },
+              [ODD.spaced]: { n: FieldValue.increment(3) },
+            },
+          },
+          { merge: true }
+        );
+
+        const d1 = (await doc.get()).data();
+        expect(d1).toEqual({
+          _idxsup: {
+            [ODD.leadingDigit]: { n: 2 },
+            [ODD.spaced]: { n: 3 },
+          },
+        });
+
+        console.log('data d1:', d1);
+
+        // Do another increment using FieldPath to prove additive behavior
+        await doc.update(
+          new FieldPath('_idxsup', ODD.leadingDigit, 'n'),
+          FieldValue.increment(5)
+        );
+        const d2 = (await doc.get()).data();
+        console.log('data d2:', d2);
+        expect(d2).toEqual({
+          _idxsup: {
+            [ODD.leadingDigit]: { n: 7 },
+            [ODD.spaced]: { n: 3 },
+          },
+        });
+      });
+
+      it('update(FieldPath, FieldValue.serverTimestamp) on odd path sets a Timestamp', async () => {
+        const doc = col().doc('tf-st-object');
+        await doc.set({});
+        await doc.update(
+          new FieldPath('_idxsup', ODD.hyphen, 'ts'),
+          FieldValue.serverTimestamp()
+        );
+
+        const got = (await doc.get()).get(
+          new FieldPath('_idxsup', ODD.hyphen, 'ts')
+        );
+        // Emulators return Timestamp; mock should mirror
+        expect(got).toBeInstanceOf(Timestamp);
+      });
+
+      it('arrayUnion on odd path via FieldPath works', async () => {
+        const doc = col().doc('tf-au-object');
+        await doc.set({});
+
+        await doc.update(
+          new FieldPath('_idxsup', ODD.spaced, 'arr'),
+          FieldValue.arrayUnion('a', 'b', 'a')
+        );
+        const d = normalizeDocData((await doc.get()).data() as DocumentData);
+        expect(d).toEqual({ _idxsup: { [ODD.spaced]: { arr: ['a', 'b'] } } });
+
+        await doc.update(
+          new FieldPath('_idxsup', ODD.spaced, 'arr'),
+          FieldValue.arrayUnion('b', 'c')
+        );
+        const d2 = normalizeDocData((await doc.get()).data() as DocumentData);
+        expect(d2).toEqual({
+          _idxsup: { [ODD.spaced]: { arr: ['a', 'b', 'c'] } },
+        });
+      });
+
+      it('BACKTICK-quoted string in update(...) is literal for transforms, creating backtick keys', async () => {
+        const doc = col().doc('tf-quoted-literal');
+        await doc.set({});
+
+        const quoted = `\`_idxsup\`.\`${ODD.leadingDigit}\`.\`m\``;
+        await doc.update(quoted, FieldValue.increment(10));
+
+        const d = normalizeDocData((await doc.get()).data() as DocumentData);
+        expect(d).toEqual({
+          ['`_idxsup`']: {
+            [`\`${ODD.leadingDigit}\``]: { '`m`': 10 },
+          },
+        });
+      });
+
+      it('numeric key via increment in object (e.g., {[9]: FieldValue.increment(1)}) stores as "9" (no backticks)', async () => {
+        const doc = col().doc('tf-numeric-key');
+        await doc.set({});
+        await doc.set({ [9]: FieldValue.increment(1) }, { merge: true });
+
+        const d = normalizeDocData((await doc.get()).data() as DocumentData);
+        expect(d).toEqual({ ['9']: 1 });
       });
     });
   });

@@ -10,6 +10,7 @@ import { googleError } from '../functions/google-error.js';
 import { DEFAULT_PROJECT_ID } from '../internal-types.js';
 import { pathType } from '../path.js';
 import { assertValidProjectId } from './utils/assert.js';
+import { parseFieldPath } from '../functions/util.js';
 
 /**
  * Context helper for GAPIC-shaped operations backed by the in-memory DataAccessor.
@@ -246,7 +247,7 @@ function applyFieldMask(
   const result: FieldsDict = {};
 
   for (const path of realMask) {
-    const segments = path.split('.');
+    const segments = parseFieldPath(path);
     const leafKey = segments.pop();
     if (!leafKey) continue;
 

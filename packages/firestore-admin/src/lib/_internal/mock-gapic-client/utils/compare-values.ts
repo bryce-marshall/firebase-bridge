@@ -10,6 +10,7 @@ import {
   isByteArrayLike,
   isPlainObject,
   isVectorLikeShallow,
+  parseFieldPath,
   toBuffer,
   VectorLike,
 } from '../../functions/util.js';
@@ -38,7 +39,8 @@ export function getComparable(
       referenceValue: context.toGapicPath(meta.path),
     });
 
-  return fieldPath.split('.').reduce((acc, key) => {
+  const segments = parseFieldPath(fieldPath);
+  return segments.reduce((acc, key) => {
     if (acc == null || typeof acc !== 'object') return undefined;
     return acc[key];
   }, meta.data);

@@ -6,7 +6,8 @@ import {
 } from 'firebase-admin/firestore';
 import { GoogleError, Status } from 'google-gax';
 import {
-  DocumentFieldTransformer,
+  DocumentFieldTransform,
+  FieldTransformFunction,
   MergeGranularity,
   NormalizedWrite,
 } from '../../data-accessor.js';
@@ -49,7 +50,7 @@ export interface TransformedWrite {
  *       - otherwise `'branch'` (top-level only).
  *   - Without `updateMask`, the operation is treated as a full-document set with
  *     merge granularity `'root'`.
- *   - `updateTransforms` are converted to {@link DocumentFieldTransformer}s and
+ *   - `updateTransforms` are converted to {@link FieldTransformFunction}s and
  *     written into the outgoing data at their respective field paths. Any values
  *     they produce are appended to `transformResults` (proto-encoded).
  *
@@ -121,27 +122,29 @@ export function transformWrites(
       const allFields = decodeDocData(context.serializer, write.update.fields);
       let data = allFields;
       let merge: MergeGranularity = write.updateMask ? 'branch' : 'root';
+      const transformers: DocumentFieldTransform[] = [];
 
       if (write.updateMask) {
         data = {};
         const fpaths = write.updateMask.fieldPaths ?? [];
-        let anyNested = false;
 
         for (const fieldPath of fpaths) {
           const segments = parseFieldPath(fieldPath); // robust parser (handles escapes)
-          if (segments.length > 1) anyNested = true;
+          if (segments.length > 1) {
+            merge = 'node';
+          }
 
           const val = getDeepValue(allFields, segments);
           if (val !== undefined) {
             setDeepValue(data, segments, val);
           } else {
-            // Missing in fields + present in mask ⇒ deletion
-            setDeepValue(data, segments, () => undefined);
+            // Missing in fields + present in mask = deletion
+            transformers.push({
+              path: segments,
+              transformer: () => undefined,
+            });
           }
         }
-
-        if (anyNested) merge = 'node';
-        // else stays 'branch' (mask with only top-level fields)
       }
 
       const output: TransformedWrite = {
@@ -151,6 +154,7 @@ export function transformWrites(
           data,
           merge,
           precondition: toPrecondition(write.currentDocument),
+          transformers,
         },
       };
 
@@ -164,7 +168,11 @@ export function transformWrites(
           if (transformer) {
             const fieldPath = transform.fieldPath;
             if (!fieldPath) throw invalidFieldTransform();
-            setDeepValue(data, fieldPath.split('.'), transformer);
+            const segments = parseFieldPath(fieldPath);
+            transformers.push({
+              path: segments,
+              transformer,
+            });
           }
         }
       }
@@ -297,7 +305,7 @@ export interface TransformedWrite {
 
 /**
  * Converts a single `DocumentTransform.FieldTransform` into an executable
- * {@link DocumentFieldTransformer} and appends any produced values to the
+ * {@link FieldTransformFunction} and appends any produced values to the
  * provided {@link TransformedWrite}'s `transformResults`.
  *
  * Supported transform kinds:
@@ -318,11 +326,11 @@ export interface TransformedWrite {
  * @returns A field transformer function or `undefined` when nothing to apply.
  * @throws {GoogleError} {@link Status.UNIMPLEMENTED} for unsupported kinds.
  */
-export function toFieldTransformer(
+function toFieldTransformer(
   serializer: Serializer,
   field: google.firestore.v1.DocumentTransform.IFieldTransform,
   output: TransformedWrite
-): DocumentFieldTransformer | undefined {
+): FieldTransformFunction | undefined {
   function append<T>(value: T): T {
     output.transformResults ??= [];
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion

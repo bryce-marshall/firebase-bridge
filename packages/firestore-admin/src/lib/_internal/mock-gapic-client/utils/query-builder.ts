@@ -13,6 +13,7 @@ import { googleError } from '../../functions/google-error.js';
 import { resolvePromise } from '../../functions/resolve-promise.js';
 import {
   getVectorValue,
+  parseFieldPath,
   peekVectorValue,
   toProtoTimestamp,
   VectorLike,
@@ -739,12 +740,26 @@ function parseOrderBy(
     const sign = currentDirection === 'DESCENDING' ? -1 : 1;
 
     return {
-      compare: (a: MetaDocumentExists, b: MetaDocumentExists) =>
-        sign *
-        compareValues(
-          getComparable(context, a, fieldPath),
-          getComparable(context, b, fieldPath)
-        ),
+      compare: (a: MetaDocumentExists, b: MetaDocumentExists) => {
+        const aVal = getComparable(context, a, fieldPath);
+        const bVal = getComparable(context, b, fieldPath);
+
+        // Missing-field placement per Firestore:
+        // ASC: undefined LAST  |  DESC: undefined FIRST
+        const aU = aVal === undefined;
+        const bU = bVal === undefined;
+        if (aU || bU) {
+          if (aU && bU) return 0; // equal for this clause; defer to next (eventually __name__)
+          return (aU ? 1 : -1) * sign; // place missing per direction
+        }
+
+        // Both defined: compare, applying direction
+        const primary = compareValues(aVal, bVal) * sign;
+        if (primary !== 0) return primary;
+
+        // equal for this clause; defer to next (eventually __name__)
+        return 0;
+      },
     };
   });
 
@@ -877,11 +892,8 @@ export function buildFindNearestTransformer(
     return distanceResultField
       ? top.map((s) => {
           const mutated = cloneDocumentData(s.doc.data);
-          setDeepValue(
-            mutated,
-            distanceResultField.split('.'),
-            normZero(s.report)
-          );
+          const segments = parseFieldPath(distanceResultField);
+          setDeepValue(mutated, segments, normZero(s.report));
 
           return {
             ...s.doc,

@@ -20,7 +20,9 @@ import {
   cloneByteArray,
   isByteArrayLike,
   isImmutableFirestoreType,
+  isPlainObject,
   isVectorLikeShallow,
+  parseFieldPath,
   peekVectorValue,
   stackPeek,
 } from './functions/util.js';
@@ -32,6 +34,10 @@ import {
   assertMutuallyExclusive,
   assertNotEmpty,
 } from './mock-gapic-client/utils/assert.js';
+import {
+  getDeepValue,
+  setDeepValue,
+} from './mock-gapic-client/utils/deep-value.js';
 import {
   matchFirestorePath,
   ParamPathPart,
@@ -205,14 +211,83 @@ interface DocumentIterator {
   getDocumentIterator(): IterableIterator<MasterDocument>;
 }
 
+/**
+ * Context passed to a {@link FieldTransformFunction} when resolving a field
+ * transform during a write (e.g., `set`, `update`, `commit`, BulkWriter, or
+ * within a transaction).
+ *
+ * @remarks
+ * - Values are **read-only** and stable for the duration of the write
+ *   operation.
+ * - `serverTime` is the canonical server clock chosen for the write; all
+ *   transforms in the same write/batch share this exact timestamp to mirror
+ *   Firestore semantics.
+ * - `fieldValue` is the field’s current value **before** the transform is
+ *   applied (i.e., after the base document data is considered but prior to
+ *   transform resolution). It is `undefined` if the field does not exist.
+ */
 export interface FieldTransformContext {
+  /**
+   * The canonical server timestamp for this write. All transforms in the same
+   * commit/batch observe this same value.
+   */
   readonly serverTime: Timestamp;
+
+  /**
+   * The existing value at the target field path prior to applying the transform,
+   * or `undefined` if the field does not exist.
+   */
   readonly fieldValue?: DocumentFieldValue;
 }
 
-export type DocumentFieldTransformer = (
+/**
+ * A function that computes the new value for a field during transform
+ * resolution.
+ *
+ * @param context Context for the current write, including the canonical
+ * `serverTime` and the field’s pre-transform value (if any).
+ * @returns The value to be written to the field.
+ *
+ * @remarks
+ * - Implementations should be **pure** and **synchronous**.
+ * - Throwing will cause the write to fail with the surfaced error.
+ * - The returned value must be a valid {@link DocumentFieldValue}.
+ *
+ * @example
+ * // Server timestamp transform
+ * const toServerTimestamp: FieldTransformFunction = ({ serverTime }) => serverTime;
+ *
+ * @example
+ * // Increment-by-N transform
+ * const incrementBy = (n: number): FieldTransformFunction =>
+ *   ({ fieldValue }) => (typeof fieldValue === 'number' ? fieldValue + n : n);
+ */
+export type FieldTransformFunction = (
   context: FieldTransformContext
 ) => DocumentFieldValue;
+
+/**
+ * Describes a single field transform to be applied atomically with a write.
+ *
+ * @remarks
+ * - `path` may be a dot-delimited string (e.g., `"stats.count"`) or an array of
+ *   field path segments (e.g., `["stats", "count"]`).
+ * - The `transformer` is evaluated at commit time using a stable
+ *   {@link FieldTransformContext}. Its result replaces the value at `path`.
+ * - Multiple transforms in the same write observe the same `serverTime`.
+ */
+export interface DocumentFieldTransform {
+  /**
+   * Target field path to transform. Accepts a dot-delimited string or an array
+   * of path segments.
+   */
+  path: string | string[];
+
+  /**
+   * Function that computes the new field value during transform resolution.
+   */
+  transformer: FieldTransformFunction;
+}
 
 /**
  * Controls how new data is applied to an existing Firestore document.
@@ -261,6 +336,28 @@ export interface NormalizedSet {
    * Determines whether the set is a full overwrite or a partial field merge.
    */
   merge: MergeGranularity;
+
+  /**
+   * Optional per-field transforms to evaluate atomically with this set.
+   *
+   * @remarks
+   * - Each entry targets a field `path` and supplies a pure `transformer`
+   *   evaluated **after** merge granularity is resolved, using a stable
+   *   {@link FieldTransformContext} (shared `serverTime`, pre-transform view).
+   * - The transform’s result replaces the value at `path` in the final document.
+   * - All transforms in the same write share the same `serverTime` and are
+   *   applied atomically. Duplicate target paths are invalid.
+   *
+   * @example
+   * // Apply server timestamp and increment atomically
+   * transformers: [
+   *   { path: 'updatedAt', transformer: ({ serverTime }) => serverTime },
+   *   { path: 'metrics.count', transformer: ({ fieldValue }) =>
+   *       typeof fieldValue === 'number' ? fieldValue + 1 : 1
+   *   }
+   * ]
+   */
+  transformers?: DocumentFieldTransform[];
 
   /**
    * Optional write precondition (e.g., exists/doesNotExist, updateTime match).
@@ -1576,7 +1673,12 @@ export class DataAccessor implements PathDataProvider {
           case 'set': {
             const current = existing.data ?? {};
             const cloned = mergeInto(op, current);
-            applyTransformers(context.serverTime, cloned, current);
+            applyTransformers(
+              context.serverTime,
+              cloned,
+              current,
+              op.transformers
+            );
             const normalized = normalizeFirestoreData(cloned);
             assertMaxDepth(cloned);
             assertWithinSizeLimit(op.path, normalized);
@@ -2609,43 +2711,30 @@ export function deepDocumentDataEqual(a: unknown, b: unknown): boolean {
   return false;
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    Object.prototype.toString.call(value) === '[object Object]'
-  );
-}
-
 function applyTransformers(
   serverTime: Timestamp,
   target: DocumentData,
-  previous: DocumentData
+  previous: DocumentData,
+  transformers: DocumentFieldTransform[] | undefined
 ): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const visit = (obj: any, prev: any) => {
-    if (isImmutableFirestoreType(obj)) return;
-    for (const key of Object.keys(obj)) {
-      const val = obj[key];
-
-      if (typeof val === 'function') {
-        const ctx: FieldTransformContext = {
-          serverTime,
-          fieldValue: prev?.[key],
-        };
-        const result = val(ctx);
-        obj[key] = result;
-      } else if (
-        val !== null &&
-        typeof val === 'object' &&
-        !Array.isArray(val)
-      ) {
-        visit(val, prev?.[key]);
-      }
+  if (!transformers?.length) return;
+  transformers.forEach((tf) => {
+    const segments =
+      typeof tf.path === 'string' ? parseFieldPath(tf.path) : tf.path;
+    if (!segments?.length) return;
+    const prevValue = getDeepValue(previous, segments);
+    const ctx: FieldTransformContext = {
+      serverTime,
+      fieldValue: prevValue,
+    };
+    const newValue = tf.transformer(ctx);
+    // `newValue === undefined` indicates a delete transform
+    // `prevValue === undefined` (as opposed to `null`) indicates non-existing node
+    // A delete against a non-existing node is a no-op (we don't want to create a parent branch that did not exist)
+    if (!(newValue === undefined && prevValue === undefined)) {
+      setDeepValue(target, segments, newValue);
     }
-  };
-
-  visit(target, previous);
+  });
 }
 
 /**
@@ -2732,9 +2821,9 @@ export function normalizeFirestoreData(input: any): any {
  * Merges changes from the `NormalizedSet` operation into `current` and returns the result.
  */
 function mergeInto(op: NormalizedSet, current: DocumentData): DocumentData {
-  const update = cloneDocumentData(op.data);
+  const input = cloneDocumentData(op.data);
 
-  if (op.merge === 'root') return update;
+  if (op.merge === 'root') return input;
 
   const target = cloneDocumentData(current);
 
@@ -2744,13 +2833,7 @@ function mergeInto(op: NormalizedSet, current: DocumentData): DocumentData {
     deepMerge: boolean
   ): void {
     for (const [key, value] of Object.entries(source)) {
-      if (typeof value === 'function') {
-        target[key] = value;
-        continue;
-      }
-
       const existing = target[key];
-
       if (deepMerge && isPlainObject(value) && isPlainObject(existing)) {
         // Both are maps: recurse
         mergeRecursively(existing as DocumentData, value as DocumentData, true);
@@ -2760,8 +2843,7 @@ function mergeInto(op: NormalizedSet, current: DocumentData): DocumentData {
       }
     }
   }
-
-  mergeRecursively(target, update, op.merge === 'node');
+  mergeRecursively(target, input, op.merge === 'node');
 
   return target;
 }
