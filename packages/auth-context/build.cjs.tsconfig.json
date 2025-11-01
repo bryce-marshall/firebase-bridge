@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.lib.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "./src",
+    "outDir": "./dist/cjs",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "declaration": false,
+    "declarationMap": false,
+    "incremental": false,
+    "composite": false,
+    "tsBuildInfoFile": "./.tsbuildinfo-cjs",
+    "emitDeclarationOnly": false
+  }
+}

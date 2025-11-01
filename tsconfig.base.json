@@ -18,6 +18,7 @@
     "strict": true,
     "target": "es2022",
     "paths": {
+      "@firebase-bridge/auth-context": ["packages/auth-context/src/index.ts"],
       "@firebase-bridge/firestore-admin": [
         "packages/firestore-admin/src/index.ts"
       ],

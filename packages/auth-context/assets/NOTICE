@@ -1,0 +1,14 @@
+@firebase-bridge/firestore-admin
+
+Copyright (c) 2025 Bryce Marshall
+All rights reserved.
+
+This product includes portions of the Google Cloud Firestore Node.js client library
+(googleapis/nodejs-firestore), © 2017–2025 Google LLC, licensed under the Apache License, Version 2.0.
+
+Adapted files / declarations:
+- src/lib/_internal/firestore/types.ts  → adapted TypeScript declarations (e.g., GapicClient interface)
+- src/lib/_internal/firestore/pool.ts   → adapted for internal use because the type is not exported by the Google package
+- src/lib/_internal/firestore/serializer.ts  → Typescript interface adaptation
+
+Modifications © 2025 Bryce Marshall.

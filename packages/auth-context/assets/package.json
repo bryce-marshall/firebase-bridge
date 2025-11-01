@@ -1,0 +1,73 @@
+{
+  "name": "@firebase-bridge/auth-context",
+  "description": "High-fidelity test utilities for Firebase Cloud Functions auth contexts. Register mock identities (Auth + App Check) and inject them into v1/v2 https.onCall and https.onRequest handlers for deterministic unit tests—no emulator required.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bryce-marshall/firebase-bridge.git",
+    "directory": "packages/auth-context"
+  },
+  "homepage": "https://github.com/bryce-marshall/firebase-bridge#readme",
+  "type": "module",
+  "main": "./cjs/index.js",
+  "module": "./esm/index.js",
+  "types": "./esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": {
+        "import": "./esm/index.d.ts",
+        "require": "./esm/index.d.cts"
+      },
+      "import": "./esm/index.js",
+      "require": "./cjs/index.js"
+    }
+  },
+  "sideEffects": false,
+  "devDependencies": {
+    "node-mocks-http": "^1.17.2"
+  },
+  "peerDependencies": {
+    "firebase-functions": "^6.4.0",
+    "google-gax": ">=5 <6",
+    "range-parser": "^1.2.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "firebase",
+    "firebase auth",
+    "auth",
+    "authentication",
+    "authorization",
+    "auth context",
+    "mock auth",
+    "identity",
+    "identity platform",
+    "app check",
+    "appcheck",
+    "id token",
+    "custom claims",
+    "callable",
+    "onCall",
+    "onRequest",
+    "https",
+    "firebase-functions",
+    "cloud functions",
+    "functions v1",
+    "functions v2",
+    "testing",
+    "unit testing",
+    "jest",
+    "vitest",
+    "emulator alternative",
+    "in-memory",
+    "mocking",
+    "AuthData",
+    "AppCheckData",
+    "CallableRequest"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
