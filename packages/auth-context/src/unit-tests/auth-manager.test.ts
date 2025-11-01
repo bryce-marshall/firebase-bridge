@@ -194,23 +194,39 @@ describe('AuthManager (general features)', () => {
     mgr.register('g', { signInProvider: 'google' });
     mgr.register('a', { signInProvider: 'apple' });
     mgr.register('t', { signInProvider: 'twitter' });
+    mgr.register('g2', { signInProvider: 'google' });
+    mgr.register('a2', { signInProvider: 'apple' });
+    mgr.register('t2', { signInProvider: 'twitter' });
 
     const g = mgr.identity('g') as MockIdentity;
     const a = mgr.identity('a') as MockIdentity;
-    const t = mgr.identity('t') as MockIdentity;
+    const t = mgr.identity('t') as MockIdentity;  
 
     expect(g.firebase.sign_in_provider).toBe('google.com');
-    expect(g.firebase.identities?.['google.com']?.[0]).toBe('CONST_GOOGLE_UID');
 
     // For apple & twitter we only assert "truthy" stable values (exact value is generated)
-    const appleId = a.firebase.identities?.['apple.com']?.[0];
-    const twId = t.firebase.identities?.['twitter.com']?.[0];
+    const googleId = firebasePid('google.com', g);
+    const appleId = firebasePid('apple.com', a);
+    const twId = firebasePid('twitter.com', t);
 
+    expect(googleId).toBe('CONST_GOOGLE_UID');
     expect(typeof appleId).toBe('string');
     expect(appleId).toBeTruthy();
 
     expect(typeof twId).toBe('string');
     expect(twId).toBeTruthy();
+
+    // Identities with common oauth-registered providers should have consistent ids,
+    // others should not despite having the same provider.
+    const g2 = mgr.identity('g2') as MockIdentity;
+    const a2 = mgr.identity('a2') as MockIdentity;
+    const t2 = mgr.identity('t2') as MockIdentity;
+    const googleId2 = firebasePid('google.com', g2);
+    const appleId2 = firebasePid('apple.com', a2);
+    const twId2 = firebasePid('twitter.com', t2);
+    expect(googleId).toBe(googleId2);
+    expect(appleId).toBe(appleId2);
+    expect(twId).not.toBe(twId2);
   });
 
   test('context(): throws for unknown keys', () => {
@@ -218,3 +234,7 @@ describe('AuthManager (general features)', () => {
     expect(() => mgr.context('missing')).toThrow(/no identity registered/i);
   });
 });
+
+function firebasePid(provider: string, id: MockIdentity): string {
+  return id.firebase.identities[provider]?.[0];
+}

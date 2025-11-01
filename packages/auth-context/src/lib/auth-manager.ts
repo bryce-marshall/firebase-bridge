@@ -98,6 +98,10 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
   private _ids = new Map<TKey, MockIdentity>();
   private _now: () => number;
 
+  /**
+   * A set of consistent oauth ids for providers where tests require them, defined during
+   * construction. This collection is readonly (frozen).
+   */
   readonly oauthIds: Record<string, string>;
 
   /**
