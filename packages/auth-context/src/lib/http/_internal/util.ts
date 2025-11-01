@@ -1,20 +1,18 @@
 import { DecodedIdToken } from 'firebase-admin/auth';
 import { AuthData } from 'firebase-functions/tasks';
+import { execPromise } from '../../_internal/util.js';
 import { GenericAuthContext } from '../../types.js';
 import { MockHttpResponse } from '../mock-http-response.js';
-import { DEFAULT_PROJECT_ID } from '../../_internal/constants.js';
-import { execPromise } from '../../_internal/util.js';
 
 /**
  * Format an ID token issuer (`iss`) string for a given project.
  *
- * @param projectNumber - Firebase project ID. Uses {@link DEFAULT_PROJECT_ID} when undefined.
- * @returns Issuer URL like `https://securetoken.google.com/<PROJECT_ID>`.
+ * @param projectNumber - Firebase project number.
+ * @returns Issuer URL like `https://firebaseappcheck.googleapis.com/<PROJECT_NUMBER>`.
  */
 export function formatIss(projectNumber: string): string {
   return `https://firebaseappcheck.googleapis.com/${projectNumber}`;
-  // return `https://securetoken.google.com/${projectNumber ?? DEFAULT_PROJECT_ID}`;
-}
+ }
 
 /**
  * Build {@link AuthData} for callable handlers from a generic auth context.
@@ -56,7 +54,7 @@ export function buildAppData(app?: { appId: string; token?: unknown }) {
  *
  * @remarks
  * - `sub` is set from `identity.uid`.
- * - `aud` is derived from `identity.iss` via {@link audFromIss}.
+ * - `aud` is the project id.
  * - Identity fields are spread into the token to emulate decoded ID token structure.
  */
 function buildToken(context: GenericAuthContext): DecodedIdToken {

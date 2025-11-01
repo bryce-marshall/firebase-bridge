@@ -14,8 +14,43 @@ import {
   HttpRequestOptions,
 } from './types.js';
 
+/**
+ * Concrete request type used by v1 `firebase-functions` HTTPS handlers.
+ *
+ * @remarks
+ * This is the Express-style `Request` re-exported for clarity and paired
+ * with `node-mocks-http` so tests can construct realistic requests without
+ * a running server.
+ */
 export type MockHttpRequest = Request;
 
+/**
+ * Create a mocked HTTP request suitable for invoking v1 `https.onRequest`
+ * handlers (and for building v1 `onCall` contexts upstream).
+ *
+ * @param options - High-level request options (method, URL, headers, body, etc.).
+ * @returns A {@link MockHttpRequest} instance compatible with Express/Firebase v1.
+ *
+ * @remarks
+ * - Defaults the HTTP method to **POST** when a body is provided, otherwise **GET**.
+ * - Ensures headers are normalized to lowercase (Node convention).
+ * - Synthesizes `content-type` and `content-length` if they’re missing.
+ * - Populates `rawBody` with the exact bytes sent (stringified for objects/arrays)
+ *   to mirror Firebase’s request shape and allow signature verification flows.
+ *
+ * @example
+ * ```ts
+ * const req = mockHttpRequest({
+ *   method: 'POST',
+ *   url: '/api/ping',
+ *   headers: { 'x-forwarded-proto': 'https' },
+ *   body: { ping: true },
+ * });
+ * expect(req.method).toBe('POST');
+ * expect(req.get('content-type')).toMatch(/application\/json/i);
+ * expect(req.rawBody).toBeInstanceOf(Buffer);
+ * ```
+ */
 export function mockHttpRequest(options?: HttpRequestOptions): MockHttpRequest {
   const _options = buildRequestOptions(options);
   const r: MockHttpRequest = createRequest(_options);
@@ -24,6 +59,19 @@ export function mockHttpRequest(options?: HttpRequestOptions): MockHttpRequest {
   return r;
 }
 
+/**
+ * Normalize a user-supplied header map to Node's expected lowercase keys and
+ * serialize array values as comma-delimited strings.
+ *
+ * @param src - Original headers (case/shape agnostic).
+ * @returns A header record with lowercase keys and string or string[] values.
+ *
+ * @remarks
+ * Node stores header names in lowercase. When a value is an array, many frameworks
+ * serialize it as a single comma-separated string; we follow that convention.
+ *
+ * @internal
+ */
 function normalizeHeaders(
   src?: HttpHeaders
 ): Record<string, string | string[]> {
@@ -40,6 +88,21 @@ function normalizeHeaders(
   return out;
 }
 
+/**
+ * Convert a flexible body shape into a raw byte buffer suitable for
+ * `req.rawBody` and for deriving content headers.
+ *
+ * @param body - Buffer, string, object/array (JSON), or undefined/null.
+ * @returns A Buffer containing the exact bytes of the request body.
+ *
+ * @example
+ * ```ts
+ * materializeBodyBuffer({ a: 1 }) // => Buffer of '{"a":1}'
+ * materializeBodyBuffer('hello')  // => Buffer of 'hello'
+ * ```
+ *
+ * @internal
+ */
 function materializeBodyBuffer(
   body: CloudFunctionsParsedBody | undefined
 ): Buffer {
@@ -50,6 +113,20 @@ function materializeBodyBuffer(
   return Buffer.from(JSON.stringify(body), 'utf8');
 }
 
+/**
+ * Ensure essential content headers are present (`content-type` and `content-length`).
+ *
+ * @param headers - Mutable header record (lowercased keys).
+ * @param bodyBuf - Raw body buffer used to derive length.
+ * @param explicitType - Optional explicit content type to prefer.
+ *
+ * @remarks
+ * - If `content-type` is missing, uses `explicitType` if provided; otherwise
+ *   defaults to `application/json; charset=utf-8` when the body is non-empty.
+ * - Always sets `content-length` if missing, based on `bodyBuf.length`.
+ *
+ * @internal
+ */
 function ensureContentHeaders(
   headers: Record<string, string | string[]>,
   bodyBuf: Buffer,
@@ -71,6 +148,22 @@ function ensureContentHeaders(
   }
 }
 
+/**
+ * Build a `node-mocks-http` {@link RequestOptions} object from high-level
+ * {@link HttpRequestOptions}, applying sensible defaults for method, URL,
+ * headers, cookies, and network fields.
+ *
+ * @param options - High-level request options, all optional.
+ * @returns A populated RequestOptions plus a `bodyBuffer` copy for Firebase parity.
+ *
+ * @remarks
+ * - Method defaults to **POST** when a `body` is provided, otherwise **GET**.
+ * - If `host` is not provided, defaults to `localhost`.
+ * - If neither `x-forwarded-proto` nor `forwarded` is provided, defaults to `http`.
+ * - Keeps a copy of the raw body bytes in `bodyBuffer` to set `req.rawBody` later.
+ *
+ * @internal
+ */
 function buildRequestOptions(
   options?: HttpRequestOptions
 ): RequestOptions & { bodyBuffer?: Buffer } {

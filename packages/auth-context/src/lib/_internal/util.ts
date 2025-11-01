@@ -1,3 +1,6 @@
+/**
+ * Strips any decorator properties from a callable (`Function`) type.
+ */
 export type JustCallable<T> = T extends { (...args: infer A): infer R }
   ? (...args: A) => R
   : never;
