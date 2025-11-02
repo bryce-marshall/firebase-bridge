@@ -15,6 +15,13 @@ import { AuthKey, AuthProvider, GenericAuthContext } from '../types.js';
 import { CallableFunctionRequest, RawHttpRequest } from './types.js';
 import { applyFunctionMeta } from './util.js';
 
+interface RunnableV2<
+  TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody,
+  TResponse extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+> {
+  run(request: CallableRequest<TData>): Promise<TResponse> | TResponse;
+}
+
 /**
  * V2 callable handler shape (`https.onCall`) as invoked by tests.
  *
@@ -164,13 +171,10 @@ export class HttpsV2Handler<TKey extends AuthKey> {
     const generic = this._provider.context(request.key);
     const callableReq = toCallableRequest(request, generic);
 
-    // Use execPromise to normalize sync throws into rejected promises
     return execPromise(() =>
-      (
-        httpsFunction as unknown as (
-          r: CallableRequest<TData>
-        ) => TResponse | Promise<TResponse>
-      )(callableReq)
+      (httpsFunction as unknown as RunnableV2<TData, TResponse>).run(
+        callableReq
+      )
     );
   }
 }
