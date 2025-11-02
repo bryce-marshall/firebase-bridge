@@ -14,7 +14,7 @@ This package lets you run a real `firebase-admin` **Firestore** instance entirel
 - **Dev dependency** intended for **unit‑testing** and **rapid prototyping** of backend logic.
 - To bind firebase-functions v1/v2 Firestore triggers to an in-memory Firestore database use the companion package **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)**.
 
->**Important**: `@firebase-bridge/firestore-admin` mocks the database, not the Admin SDK itself. When you use it, you’re interacting with real Firestore Admin SDK instances — the same objects you’d use in production. The mock simply patches its own `Google API Client` implementation under the hood, “tricking” the SDK into thinking it’s communicating with Firestore’s backend. This means your tests exercise authentic Admin SDK behavior without an emulator and without network calls.
+> **Important**: `@firebase-bridge/firestore-admin` mocks the database, not the Admin SDK itself. When you use it, you’re interacting with real Firestore Admin SDK instances — the same objects you’d use in production. The mock simply patches its own `Google API Client` implementation under the hood, “tricking” the SDK into thinking it’s communicating with Firestore’s backend. This means your tests exercise authentic Admin SDK behavior without an emulator and without network calls.
 
 ### When to use it
 
@@ -27,6 +27,11 @@ This package lets you run a real `firebase-admin` **Firestore** instance entirel
 - Zero boot time. Zero deploy loop. Zero external processes — just edit, save, and test
 - Deterministic **in-memory Firestore** with controllable time
 - Suited to tight test loops and CI where startup cost matters
+
+### Companion Packages
+
+- To bind firebase-functions (v1 & v2) Firestore triggers to an in-memory Firestore database use the companion package **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)**.
+- For a high-fidelity **mock invocation layer** for **Firebase HTTPS Cloud Functions** (v1 & v2) — run real `onCall` / `onRequest` handlers locally with realistic **auth**, **App Check**, **instance ID**, and headers (no emulator) — use the companion package **[@firebase-bridge/auth-context](https://www.npmjs.com/package/@firebase-bridge/auth-context)**.
 
 ---
 

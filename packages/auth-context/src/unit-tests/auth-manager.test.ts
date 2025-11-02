@@ -8,6 +8,13 @@ describe('AuthManager (general features)', () => {
   const M30 = 30 * 60;
   const H1 = 60 * 60;
 
+  test('constructs anonymous identity', () => {
+    const mgr = new AuthManager();
+    mgr.register('anon', {
+      signInProvider: 'anonymous',
+    });
+  });
+
   test('constructs with explicit overrides and exposes derived fields', () => {
     const mgr = new AuthManager({
       now: () => FIXED_MS,
@@ -104,7 +111,7 @@ describe('AuthManager (general features)', () => {
     const mgr = new AuthManager({ now: () => FIXED_MS });
     mgr.register('noapp', { email: 'noapp@example.com' });
 
-    const ctx = mgr.context('noapp', { suppressAppCheck: true });
+    const ctx = mgr.context('noapp', { appCheck: false });
     expect(ctx.app).toBeUndefined();
   });
 
@@ -200,7 +207,7 @@ describe('AuthManager (general features)', () => {
 
     const g = mgr.identity('g') as MockIdentity;
     const a = mgr.identity('a') as MockIdentity;
-    const t = mgr.identity('t') as MockIdentity;  
+    const t = mgr.identity('t') as MockIdentity;
 
     expect(g.firebase.sign_in_provider).toBe('google.com');
 

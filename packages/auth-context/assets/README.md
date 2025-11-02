@@ -1,6 +1,6 @@
-# @firebase-bridge/firestore-admin
+# @firebase-bridge/auth-context
 
-> High‑fidelity **in‑memory mock** for the **Firestore Admin SDK**. Purpose‑built for fast, deterministic backend unit tests (no emulator boot, no deploy loop).
+> High-fidelity **mock invocation layer** for **Firebase HTTPS Cloud Functions** (v1 & v2). Purpose-built for fast, deterministic backend unit tests without network calls or the Functions emulator.
 
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](#license)
 [![node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen.svg)](https://nodejs.org)
@@ -8,32 +8,26 @@
 
 ### What it is
 
-This package lets you run a real `firebase-admin` **Firestore** instance entirely **in-process** against an in‑memory database with high-fidelity production Firestore semantics (CRUD, batches, transactions, queries, aggregations, vector values, listeners, etc).
+This package provides a realistic **in-memory invocation harness** for Firebase **HTTPS Cloud Functions**. It supports both **v1** (`firebase-functions/v1`) and **v2** (`firebase-functions/v2`) APIs, enabling deterministic local execution of callable (`onCall`) and request (`onRequest`) handlers.
 
-- **Backend only** (Node.js). No client/browser APIs.
-- **Dev dependency** intended for **unit‑testing** and **rapid prototyping** of backend logic.
-- To bind firebase-functions v1/v2 Firestore triggers to an in-memory Firestore database use the companion package **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)**.
+- Works with **real function handlers** — no stubbing or rewriting required.
+- Simulates **auth**, **App Check**, **instance ID**, and **request metadata**.
+- Provides configurable identity and contextual overrides.
+- Designed for **fast, side-effect-free tests** — no emulator or deployment loop.
 
->**Important**: `@firebase-bridge/firestore-admin` mocks the database, not the Admin SDK itself. When you use it, you’re interacting with real Firestore Admin SDK instances — the same objects you’d use in production. The mock simply patches its own `Google API Client` implementation under the hood, “tricking” the SDK into thinking it’s communicating with Firestore’s backend. This means your tests exercise authentic Admin SDK behavior without an emulator and without network calls.
+> **Important:** `@firebase-bridge/auth-context` mocks the **invocation context**, not the Cloud Functions SDK itself. Your handlers execute exactly as they would in production — the mock simply supplies realistic `Request`, `Response`, and context objects, allowing you to test business logic locally and deterministically.
+
 
 ### When to use it
+- Unit tests for Cloud Function handlers (`onCall`, `onRequest`).
+- CI environments where the **Functions Emulator** is unavailable or slow.
+- Deterministic handler testing with realistic auth & request data.
 
-- Unit and integration tests for backend code using `firebase-admin/firestore`
-- CI where the **Firestore Emulator** is slow or unavailable
-- Deterministic tests that need a controllable clock and fast resets
 
-### Why not the emulator (for this use case)
+### Companion Packages
 
-- Zero boot time. Zero deploy loop. Zero external processes — just edit, save, and test
-- Deterministic **in-memory Firestore** with controllable time
-- Suited to tight test loops and CI where startup cost matters
-
----
-
-## Support
-
-This project is made freely available under the [Apache 2.0 License](#license).  
-If you find it useful and would like to support ongoing development, you can [buy me a coffee](https://buymeacoffee.com/brycemarshall). ☕
+- For a high‑fidelity **in‑memory mock** for the **Firestore Admin SDK** purpose‑built for fast, deterministic backend unit tests (no emulator boot, no deploy loop) use the companion package **[@firebase-bridge/firestore-admin](https://www.npmjs.com/package/@firebase-bridge/firestore-admin)**.
+- To bind firebase-functions (v1 & v2) Firestore triggers to an in-memory Firestore database use the companion package **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)**.
 
 ---
 
@@ -41,606 +35,435 @@ If you find it useful and would like to support ongoing development, you can [bu
 
 ```bash
 # npm
-npm i -D @firebase-bridge/firestore-admin firebase-admin
+npm i -D @firebase-bridge/auth-context firebase-functions
 
 # pnpm
-pnpm add -D @firebase-bridge/firestore-admin firebase-admin
+pnpm add -D @firebase-bridge/auth-context firebase-functions
 
 # yarn
-yarn add -D @firebase-bridge/firestore-admin firebase-admin
+yarn add -D @firebase-bridge/auth-context firebase-functions
 ```
 
-> **Peer deps:** `firebase-admin` • **Node:** 18+ recommended • **TS:** strict mode recommended.
+> **Peer deps:** `firebase-functions` • **Node:** 18+ recommended • **TS:** strict mode recommended.
 
 ---
 
-## Quick start (Jest/Vitest)
+## Quick start
 
-Two common setup styles are shown below. **Prefer the fast reset approach** for speed; use **fresh DB per test** when you need complete DB lifecycle isolation.
-
-### A) Fast resets (preferred)
-
-Create one environment and one database for the whole suite; **reset between tests**:
+### v1 callable function
 
 ```ts
-import { Firestore } from 'firebase-admin/firestore';
-import { FirestoreMock } from '@firebase-bridge/firestore-admin';
+import { runWith, https } from 'firebase-functions/v1';
+import { AuthManager } from '@firebase-bridge/auth-context';
 
-describe('Example suite (fast resets)', () => {
-  const env = new FirestoreMock();
-  const firestore: Firestore = env.createDatabase().firestore();
+export const addNumbers = runWith({}).https.onCall((data, context) => {
+  const { a, b } = data;
+  return { result: a + b, uid: context.auth?.uid ?? null };
+});
 
-  afterEach(() => {
-    env.resetAll(); // clears all databases in this env, keeps them alive
-  });
+const auth = new AuthManager();
+auth.register('alice', { signInProvider: 'google.com' });
 
-  it('writes and reads', async () => {
-    const ref = firestore.collection('users').doc('ada');
-    await ref.set({ name: 'Ada', score: 1 });
-    const snap = await ref.get();
-    expect(snap.exists).toBe(true);
-    expect(snap.data()).toEqual({ name: 'Ada', score: 1 });
+describe('addNumbers', () => {
+  it('adds numbers with auth', async () => {
+    const res = await auth.https.v1.onCall(
+      { key: 'alice', data: { a: 5, b: 7 } },
+      addNumbers
+    );
+    expect(res.result).toBe(12);
+    expect(res.uid).toMatch(/^uid_/);
   });
 });
 ```
 
-### B) Fresh DB per test (full isolation)
-
-Provision a new logical DB per test and **delete** after each:
+### v2 callable function
 
 ```ts
-import { Firestore } from 'firebase-admin/firestore';
-import { FirestoreMock } from '@firebase-bridge/firestore-admin';
+import { runWith, https } from 'firebase-functions/v2';
+import { AuthManager } from '@firebase-bridge/auth-context';
 
-describe('Example suite (fresh DB per test)', () => {
-  const env = new FirestoreMock();
-  let firestore!: Firestore;
+export const greetUser = runWith({}).https.onCall((data, context) => {
+  const name = data?.name ?? 'unknown';
+  return { greeting: `Hello, ${name}!`, appId: context.app?.appId ?? 'none' };
+});
 
-  beforeEach(() => {
-    firestore = env.createDatabase().firestore();
-  });
+const auth = new AuthManager();
+auth.register('bob', { signInProvider: 'google.com' });
 
-  afterEach(() => {
-    env.deleteAll(); // disposes all databases in this env
-  });
-
-  it('writes and reads', async () => {
-    const ref = firestore.collection('users').doc('ada');
-    await ref.set({ name: 'Ada', score: 1 });
-    const snap = await ref.get();
-    expect(snap.exists).toBe(true);
-    expect(snap.data()).toEqual({ name: 'Ada', score: 1 });
+describe('greetUser', () => {
+  it('returns a proper greeting', async () => {
+    const res = await auth.https.v2.onCall(
+      { key: 'bob', data: { name: 'Bob' } },
+      greetUser
+    );
+    expect(res.greeting).toBe('Hello, Bob!');
   });
 });
 ```
 
-### Multiple databases & Firestore isolation
+### v1/v2 request handlers
 
-You can host **many logical databases** in one environment, and you can create **multiple Firestore instances** attached to the **same** database when you need Firestore‑level isolation (e.g., independent listeners) over shared state.
+Both handler variants are accessed via the same interface:
 
 ```ts
-const env = new FirestoreMock();
+const fn = runWith({}).https.onRequest((req, res) => {
+  res.status(200).json({ path: req.path, method: req.method });
+});
 
-// Two separate logical databases
-const dbA = env.createDatabase('proj-A', '(default)');
-const dbB = env.createDatabase('proj-B', '(default)');
+const auth = new AuthManager();
+auth.register('carol', { signInProvider: 'google.com' });
 
-const fsA1 = dbA.firestore();
-const fsA2 = dbA.firestore(); // isolated Firestore instances, same DB
-const fsB = dbB.firestore(); // different DB entirely
+const response = await auth.https.v2.onRequest(
+  { key: 'carol', options: { method: 'GET', path: '/hello' } },
+  fn
+);
+expect(response._getStatusCode()).toBe(200);
 ```
 
 ---
 
 ## Core concepts & API
 
-This package exposes a small set of high‑leverage primitives. Names below are **actual exports**.
+This package focuses on deterministic and configurable Cloud Function invocation.
 
-### `class FirestoreMock`
+### `class AuthManager`
 
-A top-level **environment** that owns one or more in-memory databases and a controllable clock.
+The central **identity and environment manager** for all handler invocations.
 
-- `createDatabase(options?: FirestoreControllerOptions): FirestoreController`
-  Provision a new database using an options object. All fields are optional with defaults:
+- `options: AuthManagerOptions` — defines environmental defaults (clock, app name, project ID, etc.).
+- `register(key: string, identity?: IdentityConstructor): void` — registers a named identity. **Keys must be registered before use**; using an unregistered key will throw an error.
+- `https.v1` — exposes v1-compatible `onCall()` and `onRequest()` methods.
+- `https.v2` — exposes v2-compatible `onCall()` and `onRequest()` methods.
 
-  - `projectId` defaults to `"default-project"`
-  - `databaseId` defaults to `"(default)"`
-  - `location` defaults to `"nam5"`
-  - `namespace` defaults to `"(default)"`
-    Use this form if you need to specify location or namespace in your tests.
-
-- `createDatabase(projectId?: string, databaseId?: string): FirestoreController`
-  Provision a new database by explicit IDs (defaults as above).
-- `getDatabase(projectId?: string, databaseId?: string): FirestoreController`
-  Access an existing database (throws if missing/deleted).
-- `databaseExists(projectId?: string, databaseId?: string): boolean`
-- `deleteAll(): void` – delete all databases in the environment.
-- `resetAll(): void` – reset all databases (data & stats) without deleting them.
-- `systemTime: SystemTime` – **controllable time source** for deterministic tests.
-
-### `class FirestoreController`
-
-A handle to a **single logical database** (identified by `projectId` and `databaseId`).
-
-- `projectId: string`, `databaseId: string`
-- `location: string` – Firestore database location identifier used in CloudEvents and resource metadata. Accepts multi‑region IDs (e.g. `nam5`, `eur3`) or regional IDs (e.g. `us-central1`). Defaults to `nam5` if omitted.
-- `namespace: string` – Datastore namespace. For Firestore Native mode this should remain `(default)`. Included for fidelity when simulating Datastore‑mode events. Defaults to `(default)` if omitted.
-- `firestore(settings?: Settings): Firestore`
-  Create a **Firestore Admin SDK** instance **scoped** to this database.
-- `exists(): boolean` – whether the database still exists.
-- `epoch(): number` – The monotonically increasing epoch version of the database (incremented with each `reset()`).
-- `version(): number` – The monotonically increasing atomic commit version of the database.
-- `delete(): void` – delete this database; subsequent calls (besides `exists()`/`reset()`) throw.
-- `reset(): void` – clear documents & stats but keep the DB alive.
-- `getStats(): FirestoreMockStats` – current cumulative stats snapshot.
-- `watchStats(watcher: (s: FirestoreMockStats) => void): () => void` – subscribe to stat changes (returns an unsubscribe).
-- `watchLifecycle(watcher: (s: DatabaseLifecycleEventArg) => void): () => void` – subscribe to lifecycle events (returns an unsubscribe).
-
-- `database: DatabaseDirect` – direct/low‑level access to the in‑memory DB (see below).
-
-### `class DatabaseDirect`
-
-A thin, synchronous façade for **direct data access** (seeding, inspection, structural imports/exports). It bypasses Admin SDK objects but maintains Firestore semantics.
-
-- **Inspection & structure**
-
-  - `listCollectionIds(documentPath: string): string[]`
-  - `listDocuments(collectionPath: string, showMissing: boolean): MetaDocument[]`
-  - `query<T>(q: DocumentQuery<T>): MetaDocumentExists<T>[]`
-  - `toStructuralDatabase(): StructuralDatabase`
-  - `fromStructuralDatabase(src: StructuralDatabase, merge?: MergeGranularity): NormalizedWriteResult`
-  - Conversion helpers: `toMetaArray()`, `toMetaMap()`, `toMap()`
-
-- **Single‑doc ops**
-
-  - `getDocument<T>(path: string): MetaDocument<T>`
-  - `setDocument<T>(path: string, data: T): MetaDocument<T>`
-  - `deleteDocument<T>(path: string): MetaDocument<T>`
-
-- **Batch ops** (atomic)
-
-  - `batchSet<T>(...docs: DatabaseDocument<T>[]): MetaDocument<T>[]`
-  - `batchDelete<T>(...paths: string[]): MetaDocument<T>[]`
-  - `batchWrite<T>(writes: (DatabaseDocument<T> | string)[]): MetaDocument<T>[]`
-    (`{ path, data }` → `set`; `string` → `delete`)
-
-> **Triggers:** Low‑level trigger registration exists on `DatabaseDirect`. This can be handy in white‑box tests. For Cloud Functions parity (v1/v2 events, subjects, metadata), prefer the **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)** companion package..
-
-#### Low‑level trigger example (DatabaseDirect)
+Anonymous identities may also be registered:
 
 ```ts
-import { FirestoreMock } from '@firebase-bridge/firestore-admin';
-
-const env = new FirestoreMock();
-const ctl = env.createDatabase('proj', '(default)');
-const direct = ctl.database;
-
-const unsubscribe = direct.registerTrigger({
-  route: 'users/{uid}/posts/{pid}',
-  callback: ({ params, doc }) => {
-    // Derive semantic kind from lineage
-    const prev = doc.previous;
-    const kind =
-      !prev?.exists && doc.exists
-        ? 'create'
-        : prev?.exists && doc.exists
-        ? 'update'
-        : prev?.exists && !doc.exists
-        ? 'delete'
-        : 'write';
-
-    console.log(`[${kind}] users/${params.uid}/posts/${params.pid}`, {
-      exists: doc.exists,
-      version: doc.version,
-      updateTime: doc.updateTime.toDate().toISOString(),
-    });
-
-    // doc.data is deeply frozen; use cloneData() for a mutable copy
-    const mutable = doc.cloneData();
-    // ...assertions, enqueue side effects for tests, etc.
-  },
+auth.register('anon', {
+  signInProvider: 'anonymous',
 });
-
-// Perform writes via Firestore or DatabaseDirect
-const fs = ctl.firestore();
-await fs
-  .collection('users')
-  .doc('u1')
-  .collection('posts')
-  .doc('p1')
-  .set({ title: 'hello' });
-
-unsubscribe();
 ```
 
-> Notes:
->
-> - Triggers fire **after** each atomic commit.
-> - If multiple writes target the same document in a single commit, only the **final state** for that path is delivered.
-> - For Cloud Functions fidelity (v1/v2 payload shaping, subjects, event IDs), prefer the **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)** companion package.
+### `AuthManagerOptions`
 
-#### DatabaseDirect — writes (including `fromStructuralDatabase()` shapes)
+Construction options for `AuthManager`.
+
+````ts
+/**
+ * Construction options for {@link AuthManager}.
+ *
+ * @remarks
+ * - All values are optional; reasonable defaults are derived when omitted.
+ * - `now` allows deterministic time control in tests.
+ */
+export interface AuthManagerOptions {
+  /**
+   * Function that returns the current epoch milliseconds.
+   * Used to derive `iat`, `auth_time`, and `exp` when not explicitly provided.
+   * Defaults to `() => Date.now()`.
+   */
+  now?: () => number;
+
+  /**
+   * Firebase App ID used to populate App Check tokens (`sub`, `app_id`).
+   * Defaults to a synthetic value derived from {@link projectNumber}.
+   */
+  appId?: string;
+
+  /**
+   * Firebase **project number** used as part of the App Check audience.
+   * Defaults to a synthetic value from {@link projectNumber}.
+   */
+  projectNumber?: string;
+
+  /**
+   * Firebase **project ID** (human-readable). Used as the App Check audience.
+   * Defaults to `'default-project'`.
+   */
+  projectId?: string;
+
+  /**
+   * Default Cloud Functions region used by the HTTPS broker.
+   * Defaults to `'nam5'`.
+   */
+  region?: string;
+  /**
+   * Allows specification of consistent oauth ids for providers where tests require them.
+   * Where a provider is specified without an accompanying id, the id will be generated by
+   * the `AuthManager` and will remain consistent throughout its lifecycle.
+   * Example:
+   * ```ts
+   *    oauthIds: {
+   *       'google.com': '24I2SUdn5m4ox716tbiH6MML7jv6',
+   *       'apple.com': undefined,
+   *    }
+   */
+  oauthIds?: Record<string, string | undefined>;
+}
+````
+
+### OAuth ID behavior
+
+When a registered identity specifies a known `signInProvider` (e.g. `google.com`, `apple.com`, `facebook.com`), `AuthManager` synthesizes **realistic provider IDs** for each:
+
+| Provider     | Example ID                    |
+| ------------ | ----------------------------- |
+| google.com   | `100012345678901234567`       |
+| apple.com    | `54321.1A2B3C4D5E6F7890.0012` |
+| facebook.com | `12345678901234567`           |
+| github.com   | `7654321`                     |
+| twitter.com  | `87654321`                    |
+
+This behavior mirrors real-world UID and OAuth ID shapes.
+
+---
+
+## Contextual invocation overrides
+
+Every invocation supports contextual overrides for timestamps, headers, and App Check data.
+
+### `CloudFunctionRequestBase`
+
+The common base interface passed to `onRequest()` and `onCall()` invocations (v1/v2):
 
 ```ts
-import {
-  FirestoreMock,
-  StructuralDatabase,
-  MergeGranularity,
-} from '@firebase-bridge/firestore-admin';
+/**
+ * Common fields for describing an invocation target and payload for HTTPS functions.
+ *
+ * @typeParam TKey - Registry key type used to look up the mock identity (via the AuthProvider).
+ * @typeParam TData - Arbitrary JSON-serializable payload passed to the function (see {@link CloudFunctionsParsedBody}).
+ *
+ * @remarks
+ * - The `key` selects which registered identity to use when synthesizing `auth` and (optionally) App Check.
+ * - `region`, `project`, and `asEmulator` influence function metadata applied to the request (e.g., headers/URL shaping).
+ * - `app` allows per-call override or suppression of App Check data.
+ * - `functionName` is advisory metadata used by helpers to annotate the request (helpful in logs or routing).
+ */
+export interface CloudFunctionRequestBase<
+  TKey extends AuthKey,
+  TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+> {
+  /**
+   * Identity registry key used to build the auth context for this invocation.
+   */
+  key: TKey;
 
-const env = new FirestoreMock();
-const ctl = env.createDatabase('proj', '(default)');
-const direct = ctl.database;
+  /**
+   * Logical payload for the call. For `onCall`, this becomes `request.data`;
+   * for `onRequest`, helpers may serialize/embed as the HTTP body depending on the mock.
+   */
+  data?: TData;
 
-// 1) Single set / delete
-direct.setDocument('users/alice', { name: 'Alice', score: 7 });
-direct.deleteDocument('users/bob'); // no-op if it didn't exist
+  /**
+   * Cloud Functions region hint (e.g., `"us-central1"`).
+   * If omitted, the broker/provider default region is used.
+   */
+  region?: string;
 
-// 2) Batch set / delete (atomic)
-direct.batchSet(
-  { path: 'users/bob', data: { name: 'Bob', score: 3 } },
-  { path: 'users/cara', data: { name: 'Cara', tags: ['pro'] } }
+  /**
+   * Firebase project ID hint. If omitted, the broker/provider default project ID is used.
+   */
+  project?: string;
+
+  /**
+   * If `true`, function metadata is marked as targeting the local emulator.
+   * This may influence headers/host construction performed by helpers.
+   */
+  asEmulator?: boolean;
+
+  /**
+   * Optional descriptive function name. Used for diagnostics and to decorate mock request metadata.
+   */
+  functionName?: string;
+}
+```
+
+### `RawHttpRequest`
+
+Extends `CloudFunctionRequestBase` and applies to `onRequest()` invocations (v1/v2):
+
+````ts
+/**
+ * Request descriptor for v1/v2 **`https.onRequest`** tests.
+ *
+ * @typeParam TKey - Registry key type used to look up the mock identity.
+ * @typeParam TData - Parsed body type that your mock request may carry.
+ *
+ * @remarks
+ * - `options` allows you to shape the Express-like request seen by the handler:
+ *   method, URL, headers, query, cookies, and serialized body.
+ * - Auth/App Check are still synthesized from `key` (and `app` override) by the provider,
+ *   not by manually setting headers in `options`.
+ */
+export interface RawHttpRequest<
+  TKey extends AuthKey,
+  TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+> extends CloudFunctionRequestBase<TKey, TData> {
+  /**
+   * Low-level request shaping options for `onRequest` handlers.
+   * These are consumed by the mock HTTP layer to construct an Express-like `Request`.
+   *
+   * @example
+   * ```ts
+   * const req: RawHttpRequest<'bob', { ping: true }> = {
+   *   key: 'bob',
+   *   data: { ping: true },
+   *   options: {
+   *     method: 'POST',
+   *     path: '/widgets?limit=10',
+   *     headers: { 'content-type': 'application/json' },
+   *     body: { ping: true },
+   *   },
+   * };
+   * ```
+   */
+  options?: HttpRequestOptions;
+}
+````
+
+### `AuthContextOptions`
+
+Options controlling how a `GenericAuthContext` is synthesized.
+
+```ts
+/**
+ * Options controlling how a {@link GenericAuthContext} is synthesized.
+ *
+ * @remarks
+ * Use to override token timestamps or App Check behavior on a per-call basis.
+ */
+export interface AuthContextOptions {
+  /**
+   * Issued-at time for the ID token (seconds since epoch, or `Date`).
+   * Defaults to `now()` if omitted.
+   */
+  iat?: number | Date;
+
+  /**
+   * Session authentication time (seconds since epoch, or `Date`).
+   * Defaults to `iat - 30 minutes` if omitted.
+   */
+  authTime?: number | Date;
+
+  /**
+   * Expiration time for the ID token (seconds since epoch, or `Date`).
+   * Defaults to `iat + 30 minutes` if omitted.
+   */
+  expires?: number | Date;
+
+  /**
+   * Per-invocation App Check override.
+   * - Provide an `AppCheckConstructor` object to override default synthesized token fields.
+   * - Provide `true` or omit to automatically synthesize an app check.
+   * - Provide `false` to omit App Check entirely.
+   */
+  appCheck?: AppCheckConstructor | boolean;
+}
+```
+
+### `CallableFunctionsRequest`
+
+Extends **both** `CloudFunctionRequestBase` **and** `AuthContextOptions`, and applies to `onCall()` invocations (v1/v2):
+
+````ts
+/**
+ * Request descriptor for v1/v2 **`https.onCall`** tests.
+ *
+ * @typeParam TKey - Registry key type used to look up the mock identity.
+ * @typeParam TData - Callable request payload type.
+ *
+ * @remarks
+ * Firebase clients do not control the low-level HTTP request for `onCall`:
+ * method, URL/path, params/query, cookies/sessions, files, and raw body are not user-configurable.
+ * Handlers receive `(data, context)` (v1) or a single `CallableRequest` (v2). A `rawRequest`
+ * object exists for compatibility, but only limited surface (like headers) is configurable here.
+ */
+export interface CallableFunctionRequest<
+  TKey extends AuthKey,
+  TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+> extends CloudFunctionRequestBase<TKey, TData>,
+    AuthContextOptions {
+  data: TData;
+  /**
+   * Additional HTTP headers to surface on the underlying `rawRequest` snapshot.
+   * (Auth/App Check headers are synthesized by the orchestrator/provider.)
+   *
+   * @example
+   * ```ts
+   * const req: CallableFunctionRequest<'alice', { x: number }> = {
+   *   key: 'alice',
+   *   data: { x: 1 },
+   *   headers: { 'x-test-scenario': 'smoke' },
+   * };
+   * ```
+   */
+  headers?: HttpHeaders;
+}
+````
+
+> By default, realistic **App Check** data is synthesized for every `onCall` invocation. You can disable or customize this behavior via the `appCheck` option.
+
+Example:
+
+```ts
+await auth.https.v2.onCall(
+  {
+    key: 'bob',
+    data: { test: true },
+    appCheck: { custom_value: 'custom-token' },
+  },
+  handler
 );
-direct.batchDelete('users/bob', 'users/ghost');
+```
 
-// 3) Heterogeneous batch write (atomic)
-//    - {path,data} → normalized to 'set' (merge: 'root')
-//    - 'string'   → normalized to 'delete'
-direct.batchWrite([{ path: 'users/alice', data: { score: 8 } }, 'users/ghost']);
+### `RawHttpRequest`
 
-// 4) Import from a structural snapshot
-const snapshot: StructuralDatabase = {
-  users: {
-    alice: {
-      data: { name: 'Alice', role: 'admin' },
-      collections: {
-        posts: {
-          p1: { data: { title: 'Hello', likes: 1 } },
-          p2: { data: { title: 'Second', likes: 0 } },
-        },
-      },
+Extends `CloudFunctionRequestBase` and applies to `onRequest()` invocations (v1/v2):
+
+- `key` — identity key for the auth context.
+- `options: HttpRequestOptions` — overrides `Request` properties (`method`, `url`, `body`, `headers`, etc.).
+
+Example:
+
+```ts
+await auth.https.v1.onRequest(
+  {
+    key: 'carol',
+    options: {
+      method: 'POST',
+      body: { value: 42 },
+      headers: { 'content-type': 'application/json' },
     },
-    cara: { data: { name: 'Cara' } },
   },
-  products: {
-    p1: { data: { sku: 'ABC-123', price: 19.95 } },
-  },
-};
-
-// Merge strategies:
-// - 'root'   → replace entire doc with provided data
-// - 'branch' → deep-merge maps; scalars/arrays replace
-// - 'node'   → apply only explicit field paths (like update/mergeFields)
-
-direct.fromStructuralDatabase(snapshot, 'root' satisfies MergeGranularity);
-
-// 5) Export to a structural snapshot (round-trippable)
-const roundTrip = direct.toStructuralDatabase();
-```
-
-> `fromStructuralDatabase` returns a normalized write result (server time + `MetaDocument[]`). All write helpers are **atomic** at the batch call boundary.
-
-#### DatabaseDirect — `stats()` (example shape)
-
-```ts
-import { DatabaseStats } from '@firebase-bridge/firestore-admin';
-
-const s: DatabaseStats = direct.stats();
-console.log(s);
-/*
-{
-  // Operation counters (cumulative until reset)
-  writes: 4,
-  reads: 3,
-  deletes: 1,
-  noopReads: 1,
-  noopWrites: 0,
-  noopDeletes: 1,
-
-  // Structural counters (current view of the tree)
-  documentCount: 3,
-  collectionCount: 2,
-  stubDocumentCount: 0,
-  stubCollectionCount: 0
-}
-*/
-```
-
-- Use `ctl.getStats()` for controller-scoped stats (adds DB identity).
-- To reset counters **and** wipe all data while keeping databases, call `ctl.reset()` (single DB) or `env.resetAll()` (all DBs). This **deletes all documents and collections**, **flushes pending changes without invoking watcher callbacks**, **zeros all database stats**, and **resets the internal change-version nonce to `0`**.
-
-#### DatabaseDirect — `query()` examples
-
-`DocumentQuery<T>` provides scoping (root/document, collection ID, collection-group toggle), optional point-in-time `readTime`, and a `predicate` over existing docs.
-
-```ts
-import { Timestamp } from 'firebase-admin/firestore';
-import {
-  DocumentQuery,
-  MetaDocumentExists,
-} from '@firebase-bridge/firestore-admin';
-
-// 1) All docs in top-level 'users'
-const q1: DocumentQuery = {
-  parent: '',
-  allDescendants: false,
-  collectionId: 'users',
-  predicate: () => true,
-};
-const users: MetaDocumentExists[] = direct.query(q1);
-
-// 2) Collection group query: any 'posts' anywhere under 'users/alice'
-const q2: DocumentQuery<{ title: string; likes: number }> = {
-  parent: 'users/alice',
-  allDescendants: true,
-  collectionId: 'posts',
-  predicate: (m) => (m.data.likes ?? 0) >= 1,
-};
-const hotPosts = direct.query(q2);
-
-// 3) As-of read (point-in-time)
-const at: Timestamp = Timestamp.fromMillis(Date.now() - 1000);
-const q3: DocumentQuery = {
-  parent: '',
-  allDescendants: true,
-  predicate: () => true,
-  readTime: at, // include docs with updateTime <= at
-};
-const asOfDocs = direct.query(q3);
-```
-
-> Results are `MetaDocumentExists<T>[]` only (non-existing docs are excluded). Order as needed in your test code.
-
-#### `MetaDocumentExists` & `MetaDocumentNotExists` (what you get back)
-
-Immutable snapshots returned from direct ops, queries, and write results.
-
-**Common fields (`MetaDocument<T>`)**
-
-- `epoch: number` – internal database **epoch** that increments each time the internal database is reset
-- `parent: string` – collection path of the doc’s parent
-- `path: string` – fully qualified document path
-- `id: string` – last segment of `path`
-- `serverTime: Timestamp` – authoritative commit/apply time for the producing op
-- `updateTime: Timestamp` – last update time for the doc (0 if never existed)
-- `version: number` – the monotonically increasing atomic **commit** version of the database
-- `hasChanges: boolean` – whether the producing op changed the doc
-- `createTime?: Timestamp` – when the doc was first created (undefined if never existed)
-- `data?: T` – **deeply frozen** data; use `cloneData()` for a mutable copy
-- `previous?: MetaDocument<T>` – **immediate** prior state for the same path (present when `hasChanges === true`; not a transitive chain)
-- `cloneData(): T | undefined` – defensive deep clone of `data`
-
-**Refinements**
-
-- `MetaDocumentExists<T>`:
-
-  - `exists: true`
-  - `createTime: Timestamp`
-  - `data: T`
-
-- `MetaDocumentNotExists<T>`:
-
-  - `exists: false`
-  - `createTime?: undefined`
-  - `data?: undefined`
-
-```ts
-const m = direct.getDocument<{ name: string }>('users/alice');
-if (m.exists) {
-  // MetaDocumentExists<{name:string}>
-  console.log(m.path, m.updateTime.toDate(), m.data.name);
-  const mutable = m.cloneData();
-} else {
-  // MetaDocumentNotExists
-  console.log('missing:', m.path);
-}
-```
-
-#### Snapshots as arrays & maps (`toMetaArray`, `toMetaMap`, `toMap`)
-
-```ts
-// Seed
-direct.batchSet(
-  { path: 'users/alice', data: { name: 'Alice', score: 7 } },
-  { path: 'users/cara', data: { name: 'Cara', score: 3 } }
+  handler
 );
-
-// 1) Array of existing meta documents (ordered)
-const arr = direct.toMetaArray();
-
-// 2) Map of path → MetaDocumentExists
-const metaMap = direct.toMetaMap();
-
-// 3) Map of path → plain document data (no meta)
-const dataMap = direct.toMap();
-```
-
-### `class SystemTime`
-
-Deterministically control “now” as observed by writes, transforms, and snapshot timestamps.
-
-- `now(): Date` – current time per strategy.
-- `system(): void` – real clock.
-- `constant(date: Date): void` – fixed instant.
-- `offset(...)`: start from a **root** time and move forward in real time (overloads support `Date` or `UTC parts`).
-- `advance(msOrParts): void` – jump the clock forward.
-- `custom(fn: () => Date): void` – fully custom time generator.
-
-#### SystemTime & `Timestamp.now()` gotcha
-
-Internally, this mock derives all commit/write/update times from **`SystemTime`**. However, **`firebase-admin`’s** `Timestamp.now()` calls into the **real clock** (e.g., `Date.now()`), which we do **not** monkey‑patch by default. As a result, if your application/test code _directly_ calls `Timestamp.now()`, it will not reflect `SystemTime` unless you take additional steps.
-
-**Options:**
-
-1. **Don’t call `Timestamp.now()` directly in tests.** Instead derive from `SystemTime`:
-
-```ts
-import { Timestamp } from 'firebase-admin/firestore';
-const ts = Timestamp.fromDate(env.systemTime.now());
-```
-
-2. **Monkey‑patch `Timestamp.now` during tests** (scoped and reversible):
-
-```ts
-import { Timestamp } from 'firebase-admin/firestore';
-let restore: undefined | (() => void);
-
-beforeAll(() => {
-  const original = Timestamp.now;
-  (Timestamp as any).now = () => Timestamp.fromDate(env.systemTime.now());
-  restore = () => {
-    (Timestamp as any).now = original;
-  };
-});
-
-afterAll(() => restore?.());
-```
-
-3. **Use your test runner’s fake‑time utilities** to align the global clock with `SystemTime`.
-
-- **Jest** (modern fake timers):
-
-```ts
-import { jest } from '@jest/globals';
-
-beforeAll(() => {
-  jest.useFakeTimers();
-});
-
-beforeEach(() => {
-  jest.setSystemTime(env.systemTime.now());
-});
-
-afterAll(() => {
-  jest.useRealTimers();
-});
-```
-
-- **Vitest** (`vi.useFakeTimers()` / `vi.setSystemTime()`), similarly.
-
-> We intentionally avoid patching `Timestamp.now()` automatically to keep this library side‑effect‑free with respect to peer dependencies. All **internal** timestamps (commit time, `serverTimestamp`, `updateTime`, `writeTime`) do honor `SystemTime`.
-
----
-
-## Structural snapshots (seed, diff, round‑trip)
-
-The **structural** types let you snapshot/import database state without Firestore objects:
-
-- `StructuralDatabase` – object tree of collections → documents → nested collections.
-- `StructuralCollection`, `StructuralCollectionGroup`, `StructuralDocument`
-
-```ts
-import {
-  StructuralDatabase,
-  DatabaseDirect,
-} from '@firebase-bridge/firestore-admin';
-
-const ctl = new FirestoreMock().createDatabase('proj', '(default)');
-const direct: DatabaseDirect = ctl.database;
-
-// Export
-const snapshot: StructuralDatabase = direct.toStructuralDatabase();
-
-// Import/merge
-const writes = direct.fromStructuralDatabase(
-  snapshot /*, 'root' | 'collection' | 'document' */
-);
-expect(writes.count).toBeGreaterThan(0);
 ```
 
 ---
 
-## Stats & observability
+## Notes on fidelity
 
-Use `FirestoreController.getStats()` to assert fidelity and track operations:
-
-```ts
-const ctl = new FirestoreMock().createDatabase();
-const fs = ctl.firestore();
-await fs.collection('c').doc('d').set({ a: 1 });
-
-const stats = ctl.getStats();
-expect(stats.documents.total).toBe(1);
-```
-
-Subscribe to live updates during tests with `watchStats()` (remember to unsubscribe):
-
-```ts
-const stop = ctl.watchStats((s) => {
-  // e.g., console.log('writes', s.operations.writes.total)
-});
-// ...
-stop();
-```
-
----
-
-## Notes on fidelity (high level)
-
-- **Atomicity**: batches/transactions are atomic; transform results follow Firestore’s ordering rules.
-- **Time**: `updateTime`, `writeTime`, and stored `serverTimestamp` follow Firestore relationships; use `SystemTime` to make tests deterministic.
-- **Queries**: filters (including `or`/`not-in`/`in`), ordering, cursors, limits, collection‑group, and aggregations (e.g., `count()`).
-- **Vector values**: supports `FieldValue.vector()` fields and nearest‑neighbor features in queries that expose them through the Admin API surface.
-- **Listeners**: document and query listeners behave like streaming APIs with monotonic `readTime` and proper change sets.
-- **Partitioned queries (CollectionGroup.getPartitions() / Query.getPartitions() → GAPIC partitionQuery)**: currently stubbed — the mock returns an empty stream (no partitions) for compatibility with tests that call it but don’t use the results. Use the emulator/Firestore for real partitioning semantics (parallel exports/batching).
-
-> If you find behavior that diverges from the real Admin SDK or emulator, please open an issue with a minimal repro — **fidelity is the project’s #1 priority**.
-
----
-
-## Package exports (public)
-
-From this package you can import:
-
-- `FirestoreMock`, `FirestoreController`
-- `DatabaseDirect` and structural types: `StructuralDatabase`, `StructuralCollection`, `StructuralCollectionGroup`, `StructuralDocument`
-- Time control: `SystemTime`
-- Useful types for assertions: `MetaDocument`, `MetaDocumentExists`, `MetaDocumentNotExists`, `MergeGranularity`, `Trigger`, `TriggerEventArg`, `FirestoreMockStats`
-
-> **Cloud Functions:** for registering/using triggers in tests, depend on the **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)** companion package.
-
----
-
-## Troubleshooting
-
-- **My Firestore calls don’t hit the mock**
-  Ensure you’re using `firestore = env.createDatabase(...).firestore()` from a `FirestoreController` **created by** this environment.
-
-- **I need fresh state between tests**
-  Prefer `env.resetAll()` (fast) over `env.deleteAll()` (disposes DBs completely). You can also reset a single DB via `controller.reset()`.
-
-- **Time‑sensitive assertions are flaky**
-  Pin or advance time via `env.systemTime`.
-
-- **Tests hang or fail to exit cleanly after running**  
-  Ensure all in-memory databases are explicitly disposed of once tests finish.  
-  Add an `afterEach()` or `afterAll()` hook to call one of the following, depending on scope:
-
-  - `env.deleteAll()` — deletes **all databases** in the `FirestoreMock` environment
-  - `controller.delete()` — deletes a **single database** via its `FirestoreController`
-
-  This guarantees that background resources (timers, intervals, listeners, etc.) are released and allows your test runner to shut down cleanly.
+- **Auth context** — realistic UID, provider data, claims, and timestamps.
+- **AppCheck** — synthesized automatically (configurable per-call and indirectly via `AuthManagerOptions`).
+- **Request/Response** — fully inspectable mocks from `node-mocks-http`.
+- **Headers & metadata** — follow Firebase conventions (`content-type`, `authorization`, `x-firebase-appcheck`).
 
 ---
 
 ## Versioning & compatibility
 
-- Peer dependency: `firebase-admin` (see your package’s `peerDependencies` for the supported range).
-- Node.js ≥ 18. TypeScript projects (ESM or CJS) are supported via the Admin SDK.
+- Peer dependency: `firebase-functions` (v1/v2)
+- Node.js ≥ 18 required.
+- Works with both ESM and CJS TypeScript projects.
 
 ---
 
 ## Contributing
 
-Thanks for your interest! This project is in **minimal-maintainer mode**.
+This project is in **minimal-maintainer mode**.
 
-- **Issues first.** Please open an issue with a clear repro or failing test. Unsolicited feature PRs may be closed.
-- **PRs limited to**: bug fixes with tests, small docs improvements, or build/release hygiene. New features require an accepted proposal in an issue first.
-- **Tests are required.** Changes must include high-fidelity tests that show alignment (or documented divergence) with the Firebase Emulator.
-- **Review cadence.** I review in batches and may be slow. There’s no support SLA.
-- **Scope guardrails.** The goal is fidelity to Firestore/Admin SDK semantics; out-of-scope features will be declined.
-
-If that works for you, awesome—bugfixes and docs tweaks are especially welcome.
+- **Issues first.** Open an issue for fidelity or compatibility issues.
+- **PRs limited to:** bug fixes with tests, doc updates, or build hygiene.
+- **Fidelity priority:** any behavioral changes must remain consistent with Cloud Functions v1/v2 semantics.
 
 ---
 
@@ -652,4 +475,4 @@ Apache-2.0 © 2025 Bryce Marshall
 
 ## Trademarks & attribution
 
-This project is **not** affiliated with, associated with, or endorsed by Google LLC. “Firebase” and “Firestore” are trademarks of Google LLC. Names are used solely to identify compatibility and do not imply endorsement.
+This project is **not** affiliated with, associated with, or endorsed by Google LLC. “Firebase” and “Cloud Functions” are trademarks of Google LLC. Names are used solely to identify compatibility and do not imply endorsement.

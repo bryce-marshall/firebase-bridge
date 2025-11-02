@@ -3,7 +3,7 @@ import {
   HttpHeaders,
   HttpRequestOptions,
 } from '../http/types.js';
-import { AppCheckOverride, AuthKey } from '../types.js';
+import { AuthContextOptions, AuthKey } from '../types.js';
 
 /**
  * Common fields for describing an invocation target and payload for HTTPS functions.
@@ -50,14 +50,6 @@ export interface CloudFunctionRequestBase<
   asEmulator?: boolean;
 
   /**
-   * Per-invocation App Check override.
-   * - Provide an object to set/override token fields.
-   * - Provide `{ suppress: true }` (or an equivalent control, per your type) to omit App Check entirely.
-   * - Omit to use provider defaults.
-   */
-  app?: AppCheckOverride;
-
-  /**
    * Optional descriptive function name. Used for diagnostics and to decorate mock request metadata.
    */
   functionName?: string;
@@ -78,8 +70,9 @@ export interface CloudFunctionRequestBase<
 export interface CallableFunctionRequest<
   TKey extends AuthKey,
   TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
-> extends CloudFunctionRequestBase<TKey, TData> {
-  data: TData,
+> extends CloudFunctionRequestBase<TKey, TData>,
+    AuthContextOptions {
+  data: TData;
   /**
    * Additional HTTP headers to surface on the underlying `rawRequest` snapshot.
    * (Auth/App Check headers are synthesized by the orchestrator/provider.)

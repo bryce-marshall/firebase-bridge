@@ -131,7 +131,7 @@ export class HttpsV2Handler<TKey extends AuthKey> {
     request: CallableFunctionRequest<TKey, TData>,
     handler: CallableHandlerV2<TData, TResponse>
   ): Promise<TResponse> {
-    const generic = this._provider.context(request.key);
+    const generic = this._provider.context(request.key, request);
     const callableReq = toCallableRequest(request, generic);
 
     return execPromise(() => handler(callableReq));
@@ -168,7 +168,7 @@ export class HttpsV2Handler<TKey extends AuthKey> {
     httpsFunction: HttpsFunction
   ): Promise<TResponse> {
     // v2 callable functions accept a single CallableRequest<T> argument.
-    const generic = this._provider.context(request.key);
+    const generic = this._provider.context(request.key, request);
     const callableReq = toCallableRequest(request, generic);
 
     return execPromise(() =>

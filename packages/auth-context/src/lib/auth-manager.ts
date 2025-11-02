@@ -58,13 +58,13 @@ export interface AuthManagerOptions {
 
   /**
    * Firebase **project ID** (human-readable). Used as the App Check audience.
-   * Defaults to {@link DEFAULT_PROJECT_ID}.
+   * Defaults to `'default-project'`.
    */
   projectId?: string;
 
   /**
    * Default Cloud Functions region used by the HTTPS broker.
-   * Defaults to {@link DEFAULT_REGION}.
+   * Defaults to `'nam5'`.
    */
   region?: string;
   /**
@@ -170,11 +170,11 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    * - The provided `identity` is normalized via {@link staticIdentity}, then deep-cloned when read.
    * - Subsequent modifications to the original `identity` object do **not** affect the registry.
    */
-  register(key: TKey, identity: IdentityConstructor): void {
+  register(key: TKey, identity?: IdentityConstructor): void {
     if (this._ids.has(key))
       throw new Error(`Identity already registered for the key "${key}".`);
 
-    this._ids.set(key, this.staticIdentity(identity));
+    this._ids.set(key, this.staticIdentity(identity ?? {}));
   }
 
   /**
@@ -234,8 +234,10 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
       projectId: this.projectId,
     };
 
-    if (options?.suppressAppCheck !== true) {
-      context.app = this.appCheck(options?.appCheck);
+    if (options?.appCheck !== false) {
+      context.app = this.appCheck(
+        options?.appCheck === true ? undefined : options?.appCheck
+      );
     }
 
     return context;
@@ -256,20 +258,32 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    * - `iat`/`exp` → derived from `c` or defaults
    */
   appCheck(c?: AppCheckConstructor | undefined): AppCheckData {
-    // Clone the constructor to capture any arbitrary key/value pairs. We override the others.
+    const alreadyConsumed = c?.alreadyConsumed === true;
+    // Clone the constructor to capture any arbitrary key/value pairs.
     const token = (c ? cloneDeep(c) : {}) as DecodedAppCheckToken;
+    // Remove the AppCheckConstructor-specific property
+    delete token.alreadyConsumed;
+    // We don't allow overriding of these properties
     token.sub = this.appId;
     token.app_id = this.appId;
     token.aud = [this.projectNumber, this.projectId];
     token.iss = this.iss;
+    // exp and iat may be overriden. Synthesize if not.
     token.exp =
       epochSeconds(c?.exp) ?? millisToSeconds(this._now()) + EPOCH_MINUTES_60;
     token.iat = epochSeconds(c?.iat) ?? token.exp - EPOCH_MINUTES_60;
+    // All other arbitrary values were cloned from the AppCheckConstructor
 
-    return {
+    const r: AppCheckData = {
       appId: token.app_id,
       token,
     };
+
+    if (alreadyConsumed) {
+      r.alreadyConsumed = alreadyConsumed;
+    }
+
+    return r;
   }
 
   /**

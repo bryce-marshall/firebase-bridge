@@ -2,34 +2,6 @@ import { DecodedAppCheckToken } from 'firebase-admin/app-check';
 import { DecodedIdToken } from 'firebase-admin/auth';
 
 /**
- * Per-invocation override for App Check behavior.
- *
- * @remarks
- * Use this to inject a specific decoded App Check token and/or signal
- * whether that token should be treated as already consumed.
- */
-export interface AppCheckOverride {
-  /**
-   * A decoded Firebase App Check token to use for this invocation.
-   *
-   * @remarks
-   * If omitted, the provider (e.g., `AuthManager`) will synthesize a token.
-   */
-  token?: DecodedAppCheckToken;
-
-  /**
-   * Indicates whether this token was already consumed.
-   *
-   * @remarks
-   * If this is the first time {@link AppCheck.verifyToken} has seen this token,
-   * this flag is `false` and the service will mark it as consumed for future calls.
-   * If `true`, the caller is attempting to reuse a previously consumed token.
-   * Consider taking additional precautions (rejecting the request, extra checks, etc.).
-   */
-  alreadyConsumed?: boolean;
-}
-
-/**
  * Authentication provider metadata embedded inside ID tokens under the
  * reserved `firebase` claim.
  *
@@ -201,6 +173,17 @@ export interface AppCheckConstructor {
    */
   iat?: Date | number;
 
+  /**
+   * Indicates whether this token was already consumed. Defaults to `false`.
+   *
+   * @remarks
+   * If this is the first time {@link AppCheck.verifyToken} has seen this token,
+   * this flag is `false` and the service will mark it as consumed for future calls.
+   * If `true`, the caller is attempting to reuse a previously consumed token.
+   * Consider taking additional precautions (rejecting the request, extra checks, etc.).
+   */
+  alreadyConsumed?: boolean;
+
   /** Additional arbitrary properties (extensible). */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
@@ -324,15 +307,12 @@ export interface AuthContextOptions {
   expires?: number | Date;
 
   /**
-   * If `true`, omit App Check from the synthesized context.
+   * Per-invocation App Check override.
+   * - Provide an `AppCheckConstructor` object to override default synthesized token fields.
+   * - Provide `true` or omit to automatically synthesize an app check.
+   * - Provide `false` to omit App Check entirely.
    */
-  suppressAppCheck?: boolean;
-
-  /**
-   * Seed values for constructing an App Check token;
-   * missing fields are defaulted by the provider.
-   */
-  appCheck?: AppCheckConstructor;
+  appCheck?: AppCheckConstructor | boolean;
 }
 
 /**

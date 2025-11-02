@@ -30,6 +30,11 @@ This package wires **Cloud Functions for Firestore** (both **v1** and **v2**) to
 - Deterministic **in-memory Firestore** with controllable time
 - Suited to tight test loops and CI where startup cost matters
 
+### Companion Packages
+
+- For a high‑fidelity **in‑memory mock** for the **Firestore Admin SDK** purpose‑built for fast, deterministic backend unit tests (no emulator boot, no deploy loop) use the companion package **[@firebase-bridge/firestore-admin](https://www.npmjs.com/package/@firebase-bridge/firestore-admin)**.
+- For a high-fidelity **mock invocation layer** for **Firebase HTTPS Cloud Functions** (v1 & v2) — run real `onCall` / `onRequest` handlers locally with realistic **auth**, **App Check**, **instance ID**, and headers (no emulator) — use the companion package **[@firebase-bridge/auth-context](https://www.npmjs.com/package/@firebase-bridge/auth-context)**.
+
 ---
 
 ## Support
