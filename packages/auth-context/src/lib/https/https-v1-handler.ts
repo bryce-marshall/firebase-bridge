@@ -13,6 +13,7 @@ import {
   AuthKey,
   AuthProvider,
   GenericAuthContext,
+  RequestContext,
 } from '../types.js';
 import { CallableFunctionRequest, RawHttpRequest } from './types.js';
 import { applyFunctionMeta } from './util.js';
@@ -85,7 +86,7 @@ export class HttpsV1Handler<TKey extends AuthKey> {
    * ```
    */
   onRequest<TData extends CloudFunctionsParsedBody>(
-    request: RawHttpRequest<TKey, TData>,
+    request: RawHttpRequest<TData>,
     handler: RequestHandlerV1
   ): Promise<MockHttpResponse> {
     const context = toRequestContext(request);
@@ -129,7 +130,10 @@ export class HttpsV1Handler<TKey extends AuthKey> {
     request: CallableFunctionRequest<TKey, TData>,
     handler: CallableHandlerV1<TData, TResponse>
   ): Promise<TResponse> {
-    const context = this._provider.context(request.key, request);
+    const context = request.key
+      ? this._provider.authContext(request.key, request)
+      : this._provider.requestContext(request);
+      
     const nativeContext = toCallableContext(request, context);
 
     return execPromise(() => handler(request.data, nativeContext));
@@ -165,7 +169,7 @@ export class HttpsV1Handler<TKey extends AuthKey> {
     request: CallableFunctionRequest<TKey, TData>,
     runnable: HttpsFunction & Runnable<TData>
   ): Promise<TResponse> {
-    const context = this._provider.context(request.key, request);
+    const context = this._provider.requestContext(request);
     const nativeContext = toCallableContext(request, context);
 
     return execPromise(() => runnable.run(request.data, nativeContext));
@@ -187,11 +191,8 @@ export class HttpsV1Handler<TKey extends AuthKey> {
  * - Clones user‐provided `HttpRequestOptions` to avoid mutation.
  * - Applies function metadata via {@link applyFunctionMeta}.
  */
-function toRequestContext<
-  TKey extends AuthKey,
-  TData extends CloudFunctionsParsedBody
->(
-  request: RawHttpRequest<TKey, TData>
+function toRequestContext<TData extends CloudFunctionsParsedBody>(
+  request: RawHttpRequest<TData>
 ): {
   request: Request;
   response: MockHttpResponse;
@@ -226,9 +227,9 @@ function toCallableContext<
   TData extends CloudFunctionsParsedBody
 >(
   request: CallableFunctionRequest<TKey, TData>,
-  generic: GenericAuthContext
+  generic: RequestContext | GenericAuthContext
 ): CallableContext {
-  const auth: AuthData = buildAuthData(generic);
+  const auth = buildAuthData(generic);
   const headers = cloneDeep(request.headers) ?? {};
   const options: HttpRequestOptions = {
     headers,

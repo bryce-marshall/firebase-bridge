@@ -213,14 +213,7 @@ export interface AppCheckData {
   alreadyConsumed?: boolean;
 }
 
-/**
- * Version-agnostic authentication context bridged into v1/v2 request types.
- *
- * @remarks
- * Providers (e.g., `AuthManager`) generate this structure, and handlers transform
- * it into version-specific contexts (`CallableContext`, `CallableRequest`, etc.).
- */
-export interface GenericAuthContext {
+export interface RequestContext {
   /**
    * App Check payload, if present for the invocation.
    */
@@ -229,6 +222,16 @@ export interface GenericAuthContext {
    * Firebase **project ID** (human-readable).
    */
   projectId: string;
+}
+
+/**
+ * Version-agnostic authentication context bridged into v1/v2 request types.
+ *
+ * @remarks
+ * Providers (e.g., `AuthManager`) generate this structure, and handlers transform
+ * it into version-specific contexts (`CallableContext`, `CallableRequest`, etc.).
+ */
+export interface GenericAuthContext extends RequestContext {
   /**
    * Static identity template used to construct `AuthData`.
    */
@@ -281,13 +284,23 @@ export interface AuthData {
  */
 export type AuthKey = string | number;
 
+export interface RequestContextOptions {
+  /**
+   * Per-invocation App Check override.
+   * - Provide an `AppCheckConstructor` object to override default synthesized token fields.
+   * - Provide `true` or omit to automatically synthesize an app check.
+   * - Provide `false` to omit App Check entirely.
+   */
+  appCheck?: AppCheckConstructor | boolean;
+}
+
 /**
  * Options controlling how a {@link GenericAuthContext} is synthesized.
  *
  * @remarks
  * Use to override token timestamps or App Check behavior on a per-call basis.
  */
-export interface AuthContextOptions {
+export interface AuthContextOptions extends RequestContextOptions {
   /**
    * Issued-at time for the ID token (seconds since epoch, or `Date`).
    * Defaults to `now()` if omitted.
@@ -305,14 +318,6 @@ export interface AuthContextOptions {
    * Defaults to `iat + 30 minutes` if omitted.
    */
   expires?: number | Date;
-
-  /**
-   * Per-invocation App Check override.
-   * - Provide an `AppCheckConstructor` object to override default synthesized token fields.
-   * - Provide `true` or omit to automatically synthesize an app check.
-   * - Provide `false` to omit App Check entirely.
-   */
-  appCheck?: AppCheckConstructor | boolean;
 }
 
 /**
@@ -332,6 +337,7 @@ export interface AuthProvider<TKey extends AuthKey> {
    */
   identity(key: TKey): MockIdentity | undefined;
 
+  requestContext(options?: RequestContextOptions): RequestContext;
   /**
    * Build a generic auth context for the given identity key.
    *
@@ -341,5 +347,5 @@ export interface AuthProvider<TKey extends AuthKey> {
    *
    * @throws {Error} Implementations may throw if the key is not registered.
    */
-  context(key: TKey, options?: AuthContextOptions): GenericAuthContext;
+  authContext(key: TKey, options?: AuthContextOptions): GenericAuthContext;
 }

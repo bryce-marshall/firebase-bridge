@@ -27,6 +27,8 @@ import {
   GenericAuthContext,
   IdentityConstructor,
   MockIdentity,
+  RequestContext,
+  RequestContextOptions,
 } from './types.js';
 
 /**
@@ -164,17 +166,21 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    *
    * @param key - Registry key.
    * @param identity - A lightweight identity **constructor** (template). It is normalized and stored immutably.
+   * @returns - the uid of the newly created identity.
    * @throws {Error} If the key is already registered.
    *
    * @remarks
    * - The provided `identity` is normalized via {@link staticIdentity}, then deep-cloned when read.
    * - Subsequent modifications to the original `identity` object do **not** affect the registry.
    */
-  register(key: TKey, identity?: IdentityConstructor): void {
+  register(key: TKey, identity?: IdentityConstructor): string {
     if (this._ids.has(key))
       throw new Error(`Identity already registered for the key "${key}".`);
 
-    this._ids.set(key, this.staticIdentity(identity ?? {}));
+    const result = this.staticIdentity(identity ?? {});
+    this._ids.set(key, result);
+
+    return result.uid;
   }
 
   /**
@@ -200,6 +206,19 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
     return cloneDeep(this._ids.get(key));
   }
 
+  requestContext(options?: RequestContextOptions): RequestContext {
+    const context: RequestContext = {
+      projectId: this.projectId,
+    };
+    if (options?.appCheck !== false) {
+      context.app = this.appCheck(
+        options?.appCheck === true ? undefined : options?.appCheck
+      );
+    }
+
+    return context;
+  }
+
   /**
    * Build a **GenericAuthContext** for a registered key.
    *
@@ -216,7 +235,7 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    * - Set `suppressAppCheck: true` to omit the `app` field.
    * - All returned structures are deep-cloned and safe to mutate in tests.
    */
-  context(key: TKey, options?: AuthContextOptions): GenericAuthContext {
+  authContext(key: TKey, options?: AuthContextOptions): GenericAuthContext {
     const id = this._ids.get(key);
     if (id == undefined)
       throw new Error(`No identity registered for the key "${key}".`);
@@ -227,18 +246,12 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
     const identity: MockIdentity = cloneDeep(id);
 
     const context: GenericAuthContext = {
+      ...this.requestContext(options),
       auth_time,
       exp,
       iat,
       identity,
-      projectId: this.projectId,
     };
-
-    if (options?.appCheck !== false) {
-      context.app = this.appCheck(
-        options?.appCheck === true ? undefined : options?.appCheck
-      );
-    }
 
     return context;
   }

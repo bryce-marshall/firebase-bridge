@@ -82,7 +82,7 @@ describe('AuthManager (general features)', () => {
     });
     mgr.register('bob', { email: 'bob@example.com', signInProvider: 'google' });
 
-    const ctx = mgr.context('bob');
+    const ctx = mgr.authContext('bob');
     expect(ctx.iat).toBe(FIXED_SEC);
     expect(ctx.auth_time).toBe(FIXED_SEC - M30);
     expect(ctx.exp).toBe(FIXED_SEC + M30);
@@ -111,7 +111,7 @@ describe('AuthManager (general features)', () => {
     const mgr = new AuthManager({ now: () => FIXED_MS });
     mgr.register('noapp', { email: 'noapp@example.com' });
 
-    const ctx = mgr.context('noapp', { appCheck: false });
+    const ctx = mgr.authContext('noapp', { appCheck: false });
     expect(ctx.app).toBeUndefined();
   });
 
@@ -123,7 +123,7 @@ describe('AuthManager (general features)', () => {
     const customAuthTime = customIat - 60;
     const customExp = customIat + 90;
 
-    const ctx = mgr.context('timed', {
+    const ctx = mgr.authContext('timed', {
       iat: customIat,
       authTime: customAuthTime,
       expires: customExp,
@@ -145,7 +145,7 @@ describe('AuthManager (general features)', () => {
     // Expose appCheck via the public context hook (no identity required to call appCheck directly here)
     // We’ll use context() just to get a valid construction path with token overrides.
     mgr.register('seed', {});
-    const ctx = mgr.context('seed', {
+    const ctx = mgr.authContext('seed', {
       appCheck: {
         // seed fields we expect to be preserved *in addition* to normalized claims
         foo: 'bar',
@@ -238,7 +238,7 @@ describe('AuthManager (general features)', () => {
 
   test('context(): throws for unknown keys', () => {
     const mgr = new AuthManager();
-    expect(() => mgr.context('missing')).toThrow(/no identity registered/i);
+    expect(() => mgr.authContext('missing')).toThrow(/no identity registered/i);
   });
 });
 

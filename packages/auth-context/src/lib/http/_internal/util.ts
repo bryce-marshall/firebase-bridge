@@ -1,7 +1,7 @@
 import { DecodedIdToken } from 'firebase-admin/auth';
 import { AuthData } from 'firebase-functions/tasks';
 import { execPromise } from '../../_internal/util.js';
-import { GenericAuthContext } from '../../types.js';
+import { GenericAuthContext, RequestContext } from '../../types.js';
 import { MockHttpResponse } from '../mock-http-response.js';
 
 /**
@@ -12,7 +12,7 @@ import { MockHttpResponse } from '../mock-http-response.js';
  */
 export function formatIss(projectNumber: string): string {
   return `https://firebaseappcheck.googleapis.com/${projectNumber}`;
- }
+}
 
 /**
  * Build {@link AuthData} for callable handlers from a generic auth context.
@@ -23,10 +23,13 @@ export function formatIss(projectNumber: string): string {
  * @remarks
  * - The returned `uid` mirrors the identity’s `uid` (i.e., the `sub` claim).
  * - The returned token is a **decoded** shape that merges standard JWT claims
- *   with fields from {@link GenericAuthContext.identity}.
+ *   with fields from {@link GenericAuthContext} identity.
  */
-export function buildAuthData(context: GenericAuthContext): AuthData {
-  const token = buildToken(context);
+export function buildAuthData(
+  context: RequestContext | GenericAuthContext
+): AuthData | undefined {
+  if ((context as GenericAuthContext).identity == undefined) return undefined;
+  const token = buildToken(context as GenericAuthContext);
 
   return { uid: token.uid as string, token };
 }

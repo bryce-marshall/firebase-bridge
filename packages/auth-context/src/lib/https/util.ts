@@ -1,7 +1,6 @@
 import { DEFAULT_PROJECT_ID, DEFAULT_REGION } from '../_internal/constants.js';
 import { cloneDeep, defaultString } from '../_internal/util.js';
 import { CloudFunctionsParsedBody, HttpRequestOptions } from '../http/types.js';
-import { AuthKey } from '../types.js';
 import { CloudFunctionRequestBase } from './types.js';
 
 /**
@@ -39,7 +38,7 @@ import { CloudFunctionRequestBase } from './types.js';
  *     or they are undefined/empty.
  */
 export function applyFunctionMeta(
-  request: CloudFunctionRequestBase<AuthKey, CloudFunctionsParsedBody>,
+  request: CloudFunctionRequestBase<CloudFunctionsParsedBody>,
   options: HttpRequestOptions,
   onCallMode: boolean
 ): void {

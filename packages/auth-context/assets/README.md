@@ -88,7 +88,7 @@ export const greetUser = runWith({}).https.onCall((data, context) => {
 });
 
 const auth = new AuthManager();
-auth.register('bob', { signInProvider: 'google.com' });
+auth.register('bob', { signInProvider: 'google' });
 
 describe('greetUser', () => {
   it('returns a proper greeting', async () => {
@@ -111,7 +111,7 @@ const fn = runWith({}).https.onRequest((req, res) => {
 });
 
 const auth = new AuthManager();
-auth.register('carol', { signInProvider: 'google.com' });
+auth.register('carol', { signInProvider: 'google' });
 
 const response = await auth.https.v2.onRequest(
   { key: 'carol', options: { method: 'GET', path: '/hello' } },
@@ -131,7 +131,7 @@ This package focuses on deterministic and configurable Cloud Function invocation
 The central **identity and environment manager** for all handler invocations.
 
 - `options: AuthManagerOptions` — defines environmental defaults (clock, app name, project ID, etc.).
-- `register(key: string, identity?: IdentityConstructor): void` — registers a named identity. **Keys must be registered before use**; using an unregistered key will throw an error.
+- `register(key: string, identity?: IdentityConstructor): string` — registers a named identity. **Keys must be registered before use**; using an unregistered key will throw an error. Returns the uid of the registered user.
 - `https.v1` — exposes v1-compatible `onCall()` and `onRequest()` methods.
 - `https.v2` — exposes v2-compatible `onCall()` and `onRequest()` methods.
 
