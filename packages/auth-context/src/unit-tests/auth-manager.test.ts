@@ -8,50 +8,6 @@ describe('AuthManager (general features)', () => {
   const M30 = 30 * 60;
   const H1 = 60 * 60;
 
-  test('tmp-test onCall', async () => {
-    const mgr = new AuthManager();
-    mgr.register('user', {
-      signInProvider: 'google',
-    });
-
-    await mgr.https.v1.onCall(
-      {
-        key: 'user',
-        data: { text: 'Hello' },
-      },
-      (data, context) => {
-        console.log(
-          '*** onCall Request Headers:',
-          JSON.stringify(context.rawRequest.headers, undefined, 3)
-        );
-
-        return undefined;
-      }
-    );
-  });
-
-  test('tmp-test onRequest', async () => {
-    const mgr = new AuthManager();
-    mgr.register('user', {
-      signInProvider: 'google',
-    });
-
-    await mgr.https.v1.onRequest(
-      {
-        key: 'user',
-        data: { text: 'Hello' },
-      },
-      (req, resp) => {
-        console.log(
-          '*** onRequest Request Headers:',
-          JSON.stringify(req.headers, undefined, 3)
-        );
-
-        resp.status(100).jsonp({});
-      }
-    );
-  });
-
   test('constructs anonymous identity', () => {
     const mgr = new AuthManager();
     mgr.register('anon', {
@@ -126,7 +82,7 @@ describe('AuthManager (general features)', () => {
     });
     mgr.register('bob', { email: 'bob@example.com', signInProvider: 'google' });
 
-    const ctx = mgr.authContext({ key: 'bob' });
+    const ctx = mgr.context({ key: 'bob' });
     expect(ctx.iat).toBe(FIXED_SEC);
     expect(ctx.auth_time).toBe(FIXED_SEC - M30);
     expect(ctx.exp).toBe(FIXED_SEC + M30);
@@ -155,7 +111,7 @@ describe('AuthManager (general features)', () => {
     const mgr = new AuthManager({ now: () => FIXED_MS });
     mgr.register('noapp', { email: 'noapp@example.com' });
 
-    const ctx = mgr.authContext({ key: 'noapp', appCheck: false });
+    const ctx = mgr.context({ key: 'noapp', appCheck: false });
     expect(ctx.app).toBeUndefined();
   });
 
@@ -167,7 +123,7 @@ describe('AuthManager (general features)', () => {
     const customAuthTime = customIat - 60;
     const customExp = customIat + 90;
 
-    const ctx = mgr.authContext({
+    const ctx = mgr.context({
       key: 'timed',
       iat: customIat,
       authTime: customAuthTime,
@@ -190,7 +146,7 @@ describe('AuthManager (general features)', () => {
     // Expose appCheck via the public context hook (no identity required to call appCheck directly here)
     // We’ll use context() just to get a valid construction path with token overrides.
     mgr.register('seed', {});
-    const ctx = mgr.authContext({
+    const ctx = mgr.context({
       key: 'seed',
       appCheck: {
         // seed fields we expect to be preserved *in addition* to normalized claims
@@ -284,7 +240,7 @@ describe('AuthManager (general features)', () => {
 
   test('context(): throws for unknown keys', () => {
     const mgr = new AuthManager();
-    expect(() => mgr.authContext({ key: 'missing' })).toThrow(
+    expect(() => mgr.context({ key: 'missing' })).toThrow(
       /no identity registered/i
     );
   });

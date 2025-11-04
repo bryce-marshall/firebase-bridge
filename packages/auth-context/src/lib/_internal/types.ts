@@ -24,7 +24,7 @@ export interface AuthProvider<TKey extends AuthKey> {
    *
    * @throws {Error} Implementations may throw if the key is not registered.
    */
-  authContext(
+  context(
     options?: AuthContextOptions<TKey>
   ): UnauthenticatedRequestContext | AuthenticatedRequestContext;
 }

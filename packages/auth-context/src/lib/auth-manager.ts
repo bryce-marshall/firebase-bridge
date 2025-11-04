@@ -221,7 +221,7 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    * - Set `suppressAppCheck: true` to omit the `app` field.
    * - All returned structures are deep-cloned and safe to mutate in tests.
    */
-  authContext(
+  context(
     options?: AuthContextOptions<TKey>
   ): UnauthenticatedRequestContext | AuthenticatedRequestContext {
     let context: AuthenticatedRequestContext | UnauthenticatedRequestContext;
@@ -273,7 +273,7 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    * - `iss` → {@link iss}
    * - `iat`/`exp` → derived from `c` or defaults
    */
-  appCheck(c?: AppCheckConstructor | undefined): AppCheckData {
+  protected appCheck(c?: AppCheckConstructor | undefined): AppCheckData {
     const alreadyConsumed = c?.alreadyConsumed === true;
     // Clone the constructor to capture any arbitrary key/value pairs.
     const token = (c ? cloneDeep(c) : {}) as DecodedAppCheckToken;

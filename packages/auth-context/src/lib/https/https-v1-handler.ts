@@ -88,7 +88,7 @@ export class HttpsV1Handler<TKey extends AuthKey> {
     request: RawHttpRequest<TKey, TData>,
     handler: RequestHandlerV1
   ): Promise<MockHttpResponse> {
-    const generic = this._provider.authContext(request);
+    const generic = this._provider.context(request);
     const context = toRequestContext(request, generic);
 
     return execAndAwaitResponse<void>(
@@ -130,7 +130,7 @@ export class HttpsV1Handler<TKey extends AuthKey> {
     request: CallableFunctionRequest<TKey, TData>,
     handler: CallableHandlerV1<TData, TResponse>
   ): Promise<TResponse> {
-    const context = this._provider.authContext(request);
+    const context = this._provider.context(request);
     const nativeContext = toCallableContext(request, context);
 
     return execPromise(() => handler(request.data, nativeContext));
@@ -166,7 +166,7 @@ export class HttpsV1Handler<TKey extends AuthKey> {
     request: CallableFunctionRequest<TKey, TData>,
     runnable: HttpsFunction & Runnable<TData>
   ): Promise<TResponse> {
-    const context = this._provider.authContext(request);
+    const context = this._provider.context(request);
     const nativeContext = toCallableContext(request, context);
 
     return execPromise(() => runnable.run(request.data, nativeContext));

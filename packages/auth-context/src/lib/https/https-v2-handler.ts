@@ -93,7 +93,7 @@ export class HttpsV2Handler<TKey extends AuthKey> {
     request: RawHttpRequest<TKey, TData>,
     handler: RequestHandlerV2
   ): Promise<MockHttpResponse> {
-    const generic = this._provider.authContext(request);
+    const generic = this._provider.context(request);
     const context = toRequestContext(request, generic);
 
     return execAndAwaitResponse<void>(
@@ -137,7 +137,7 @@ export class HttpsV2Handler<TKey extends AuthKey> {
     request: CallableFunctionRequest<TKey, TData>,
     handler: CallableHandlerV2<TData, TResponse>
   ): Promise<TResponse> {
-    const context = this._provider.authContext(request);
+    const context = this._provider.context(request);
     const callableReq = toCallableRequest(request, context);
 
     return execPromise(() => handler(callableReq));
@@ -174,7 +174,7 @@ export class HttpsV2Handler<TKey extends AuthKey> {
     httpsFunction: HttpsFunction
   ): Promise<TResponse> {
     // v2 callable functions accept a single CallableRequest<T> argument.
-    const generic = this._provider.authContext(request);
+    const generic = this._provider.context(request);
     const callableReq = toCallableRequest(request, generic);
 
     return execPromise(() =>
