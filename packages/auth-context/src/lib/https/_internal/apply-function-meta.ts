@@ -1,11 +1,15 @@
 import { DecodedAppCheckToken } from 'firebase-admin/app-check';
 import { DecodedIdToken } from 'firebase-admin/auth';
-import { DEFAULT_PROJECT_ID, DEFAULT_REGION } from '../_internal/types.js';
-import { cloneDeep, defaultString } from '../_internal/util.js';
-import { CloudFunctionsParsedBody, HttpRequestOptions } from '../http/types.js';
-import { encodeAppCheckToken, encodeIdToken } from '../http/util.js';
-import { AuthKey } from '../types.js';
-import { CloudFunctionRequestBase } from './types.js';
+import { DEFAULT_PROJECT_ID, DEFAULT_REGION } from '../../_internal/types.js';
+import { cloneDeep, defaultString } from '../../_internal/util.js';
+import {
+  CloudFunctionsParsedBody,
+  HttpRequestOptions,
+} from '../../http/types.js';
+import { AuthKey } from '../../types.js';
+import { encodeAppCheckToken, encodeIdToken } from '../jwt.js';
+import { CloudFunctionRequestBase } from '../types.js';
+import { HeaderKey } from './util.js';
 
 const CONTENT_TYPE_JSON = 'application/json';
 
@@ -13,17 +17,6 @@ export interface FunctionMetaDataOptions {
   onCallMode: boolean;
   appCheck?: DecodedAppCheckToken;
   id?: DecodedIdToken;
-}
-
-/**
- * Http header keys (standard and custom) replicating the Firebase environment.
- */
-enum HeaderKey {
-  Host = 'host',
-  ContentType = 'content-type',
-  Authorization = 'authorization',
-  ForwardedProto = 'x-forwarded-proto',
-  AppCheck = 'x-firebase-appcheck',
 }
 
 /**

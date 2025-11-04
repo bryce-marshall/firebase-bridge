@@ -12,7 +12,7 @@ import {
   HttpCookies,
   HttpHeaders,
   HttpRequestOptions,
-} from './types.js';
+} from '../types.js';
 
 /**
  * Concrete request type used by v1 `firebase-functions` HTTPS handlers.

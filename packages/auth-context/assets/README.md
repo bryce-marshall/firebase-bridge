@@ -10,24 +10,23 @@
 
 This package provides a realistic **in-memory invocation harness** for Firebase **HTTPS Cloud Functions**. It supports both **v1** (`firebase-functions/v1`) and **v2** (`firebase-functions/v2`) APIs, enabling deterministic local execution of callable (`onCall`) and request (`onRequest`) handlers.
 
-- Works with **real function handlers** — no stubbing or rewriting required.
-- Simulates **auth**, **App Check**, **instance ID**, and **request metadata**.
-- Provides configurable identity and contextual overrides.
-- Designed for **fast, side-effect-free tests** — no emulator or deployment loop.
+* Works with **real function handlers** — no stubbing or rewriting required.
+* Simulates **auth**, **App Check**, **instance ID**, and **request metadata**.
+* Provides configurable identity and contextual overrides.
+* Designed for **fast, side-effect-free tests** — no emulator or deployment loop.
 
 > **Important:** `@firebase-bridge/auth-context` mocks the **invocation context**, not the Cloud Functions SDK itself. Your handlers execute exactly as they would in production — the mock simply supplies realistic `Request`, `Response`, and context objects, allowing you to test business logic locally and deterministically.
 
-
 ### When to use it
-- Unit tests for Cloud Function handlers (`onCall`, `onRequest`).
-- CI environments where the **Functions Emulator** is unavailable or slow.
-- Deterministic handler testing with realistic auth & request data.
 
+* Unit tests for Cloud Function handlers (`onCall`, `onRequest`).
+* CI environments where the **Functions Emulator** is unavailable or slow.
+* Deterministic handler testing with realistic auth & request data.
 
 ### Companion Packages
 
-- For a high‑fidelity **in‑memory mock** for the **Firestore Admin SDK** purpose‑built for fast, deterministic backend unit tests (no emulator boot, no deploy loop) use the companion package **[@firebase-bridge/firestore-admin](https://www.npmjs.com/package/@firebase-bridge/firestore-admin)**.
-- To bind firebase-functions (v1 & v2) Firestore triggers to an in-memory Firestore database use the companion package **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)**.
+* For a high-fidelity **in-memory mock** for the **Firestore Admin SDK** purpose-built for fast, deterministic backend unit tests (no emulator boot, no deploy loop) use the companion package **[@firebase-bridge/firestore-admin](https://www.npmjs.com/package/@firebase-bridge/firestore-admin)**.
+* To bind firebase-functions (v1 & v2) Firestore triggers to an in-memory Firestore database use the companion package **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)**.
 
 ---
 
@@ -50,410 +49,288 @@ yarn add -D @firebase-bridge/auth-context firebase-functions
 
 ## Quick start
 
-### v1 callable function
+This package is built around a single orchestrator: **`AuthManager`**. You register one or more identities up front (by key), then invoke real Firebase HTTPS handlers (v1 or v2) against those identities. The manager synthesizes realistic `auth`, App Check, timestamps, and request metadata.
+
+### 1) Set up the manager
 
 ```ts
-import { runWith, https } from 'firebase-functions/v1';
 import { AuthManager } from '@firebase-bridge/auth-context';
 
-export const addNumbers = runWith({}).https.onCall((data, context) => {
-  const { a, b } = data;
-  return { result: a + b, uid: context.auth?.uid ?? null };
-});
-
-const auth = new AuthManager();
-auth.register('alice', { signInProvider: 'google.com' });
-
-describe('addNumbers', () => {
-  it('adds numbers with auth', async () => {
-    const res = await auth.https.v1.onCall(
-      { key: 'alice', data: { a: 5, b: 7 } },
-      addNumbers
-    );
-    expect(res.result).toBe(12);
-    expect(res.uid).toMatch(/^uid_/);
-  });
+const auth = new AuthManager({
+  projectId: 'demo-project',
+  region: 'us-central1',
 });
 ```
 
-### v2 callable function
+### 2) Register identities
 
 ```ts
-import { runWith, https } from 'firebase-functions/v2';
-import { AuthManager } from '@firebase-bridge/auth-context';
-
-export const greetUser = runWith({}).https.onCall((data, context) => {
-  const name = data?.name ?? 'unknown';
-  return { greeting: `Hello, ${name}!`, appId: context.app?.appId ?? 'none' };
+auth.register('alice', {
+  signInProvider: 'google.com',
+  // optionally: uid, email, custom claims, appCheck, timestamps…
 });
-
-const auth = new AuthManager();
-auth.register('bob', { signInProvider: 'google' });
-
-describe('greetUser', () => {
-  it('returns a proper greeting', async () => {
-    const res = await auth.https.v2.onCall(
-      { key: 'bob', data: { name: 'Bob' } },
-      greetUser
-    );
-    expect(res.greeting).toBe('Hello, Bob!');
-  });
-});
-```
-
-### v1/v2 request handlers
-
-Both handler variants are accessed via the same interface:
-
-```ts
-const fn = runWith({}).https.onRequest((req, res) => {
-  res.status(200).json({ path: req.path, method: req.method });
-});
-
-const auth = new AuthManager();
-auth.register('carol', { signInProvider: 'google' });
-
-const response = await auth.https.v2.onRequest(
-  { key: 'carol', options: { method: 'GET', path: '/hello' } },
-  fn
-);
-expect(response._getStatusCode()).toBe(200);
-```
-
----
-
-## Core concepts & API
-
-This package focuses on deterministic and configurable Cloud Function invocation.
-
-### `class AuthManager`
-
-The central **identity and environment manager** for all handler invocations.
-
-- `options: AuthManagerOptions` — defines environmental defaults (clock, app name, project ID, etc.).
-- `register(key: string, identity?: IdentityConstructor): string` — registers a named identity. **Keys must be registered before use**; using an unregistered key will throw an error. Returns the uid of the registered user.
-- `https.v1` — exposes v1-compatible `onCall()` and `onRequest()` methods.
-- `https.v2` — exposes v2-compatible `onCall()` and `onRequest()` methods.
-
-Anonymous identities may also be registered:
-
-```ts
 auth.register('anon', {
   signInProvider: 'anonymous',
 });
 ```
 
-### `AuthManagerOptions`
-
-Construction options for `AuthManager`.
-
-````ts
-/**
- * Construction options for {@link AuthManager}.
- *
- * @remarks
- * - All values are optional; reasonable defaults are derived when omitted.
- * - `now` allows deterministic time control in tests.
- */
-export interface AuthManagerOptions {
-  /**
-   * Function that returns the current epoch milliseconds.
-   * Used to derive `iat`, `auth_time`, and `exp` when not explicitly provided.
-   * Defaults to `() => Date.now()`.
-   */
-  now?: () => number;
-
-  /**
-   * Firebase App ID used to populate App Check tokens (`sub`, `app_id`).
-   * Defaults to a synthetic value derived from {@link projectNumber}.
-   */
-  appId?: string;
-
-  /**
-   * Firebase **project number** used as part of the App Check audience.
-   * Defaults to a synthetic value from {@link projectNumber}.
-   */
-  projectNumber?: string;
-
-  /**
-   * Firebase **project ID** (human-readable). Used as the App Check audience.
-   * Defaults to `'default-project'`.
-   */
-  projectId?: string;
-
-  /**
-   * Default Cloud Functions region used by the HTTPS broker.
-   * Defaults to `'nam5'`.
-   */
-  region?: string;
-  /**
-   * Allows specification of consistent oauth ids for providers where tests require them.
-   * Where a provider is specified without an accompanying id, the id will be generated by
-   * the `AuthManager` and will remain consistent throughout its lifecycle.
-   * Example:
-   * ```ts
-   *    oauthIds: {
-   *       'google.com': '24I2SUdn5m4ox716tbiH6MML7jv6',
-   *       'apple.com': undefined,
-   *    }
-   */
-  oauthIds?: Record<string, string | undefined>;
-}
-````
-
-### OAuth ID behavior
-
-When a registered identity specifies a known `signInProvider` (e.g. `google.com`, `apple.com`, `facebook.com`), `AuthManager` synthesizes **realistic provider IDs** for each:
-
-| Provider     | Example ID                    |
-| ------------ | ----------------------------- |
-| google.com   | `100012345678901234567`       |
-| apple.com    | `54321.1A2B3C4D5E6F7890.0012` |
-| facebook.com | `12345678901234567`           |
-| github.com   | `7654321`                     |
-| twitter.com  | `87654321`                    |
-
-This behavior mirrors real-world UID and OAuth ID shapes.
+> **Why register?** The manager needs a stable definition of “who is calling” so it can build a realistic Firebase `CallableContext` / `Request` for every test. Using an unknown key throws — this helps catch typos in tests.
 
 ---
 
-## Contextual invocation overrides
+## Invoking HTTPS functions
 
-Every invocation supports contextual overrides for timestamps, headers, and App Check data.
+The manager exposes a symmetric surface for **v1** and **v2** via `auth.https.v1` and `auth.https.v2`. Both support `onCall(...)` and `onRequest(...)`.
 
-### `CloudFunctionRequestBase`
-
-The common base interface passed to `onRequest()` and `onCall()` invocations (v1/v2):
+### v1 callable example
 
 ```ts
-/**
- * Common fields for describing an invocation target and payload for HTTPS functions.
- *
- * @typeParam TKey - Registry key type used to look up the mock identity (via the AuthProvider).
- * @typeParam TData - Arbitrary JSON-serializable payload passed to the function (see {@link CloudFunctionsParsedBody}).
- *
- * @remarks
- * - The `key` selects which registered identity to use when synthesizing `auth` and (optionally) App Check.
- * - `region`, `project`, and `asEmulator` influence function metadata applied to the request (e.g., headers/URL shaping).
- * - `app` allows per-call override or suppression of App Check data.
- * - `functionName` is advisory metadata used by helpers to annotate the request (helpful in logs or routing).
- */
-export interface CloudFunctionRequestBase<
-  TKey extends AuthKey,
-  TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
-> {
-  /**
-   * Identity registry key used to build the auth context for this invocation.
-   */
-  key: TKey;
+import { runWith } from 'firebase-functions/v1';
+import { AuthManager } from '@firebase-bridge/auth-context';
 
-  /**
-   * Logical payload for the call. For `onCall`, this becomes `request.data`;
-   * for `onRequest`, helpers may serialize/embed as the HTTP body depending on the mock.
-   */
-  data?: TData;
+const auth = new AuthManager();
+auth.register('alice', { signInProvider: 'google.com' });
 
-  /**
-   * Cloud Functions region hint (e.g., `"us-central1"`).
-   * If omitted, the broker/provider default region is used.
-   */
-  region?: string;
+export const addNumbers = runWith({}).https.onCall((data, context) => {
+  return {
+    sum: (data.a ?? 0) + (data.b ?? 0),
+    caller: context.auth?.uid ?? null,
+  };
+});
 
-  /**
-   * Firebase project ID hint. If omitted, the broker/provider default project ID is used.
-   */
-  project?: string;
-
-  /**
-   * If `true`, function metadata is marked as targeting the local emulator.
-   * This may influence headers/host construction performed by helpers.
-   */
-  asEmulator?: boolean;
-
-  /**
-   * Optional descriptive function name. Used for diagnostics and to decorate mock request metadata.
-   */
-  functionName?: string;
-}
+it('adds numbers as alice', async () => {
+  const res = await auth.https.v1.onCall(
+    { key: 'alice', data: { a: 2, b: 3 } },
+    addNumbers
+  );
+  expect(res.sum).toBe(5);
+  expect(res.caller).toMatch(/^uid_/);
+});
 ```
 
-### `RawHttpRequest`
-
-Extends `CloudFunctionRequestBase` and applies to `onRequest()` invocations (v1/v2):
-
-````ts
-/**
- * Request descriptor for v1/v2 **`https.onRequest`** tests.
- *
- * @typeParam TKey - Registry key type used to look up the mock identity.
- * @typeParam TData - Parsed body type that your mock request may carry.
- *
- * @remarks
- * - `options` allows you to shape the Express-like request seen by the handler:
- *   method, URL, headers, query, cookies, and serialized body.
- * - Auth/App Check are still synthesized from `key` (and `app` override) by the provider,
- *   not by manually setting headers in `options`.
- */
-export interface RawHttpRequest<
-  TKey extends AuthKey,
-  TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
-> extends CloudFunctionRequestBase<TKey, TData> {
-  /**
-   * Low-level request shaping options for `onRequest` handlers.
-   * These are consumed by the mock HTTP layer to construct an Express-like `Request`.
-   *
-   * @example
-   * ```ts
-   * const req: RawHttpRequest<'bob', { ping: true }> = {
-   *   key: 'bob',
-   *   data: { ping: true },
-   *   options: {
-   *     method: 'POST',
-   *     path: '/widgets?limit=10',
-   *     headers: { 'content-type': 'application/json' },
-   *     body: { ping: true },
-   *   },
-   * };
-   * ```
-   */
-  options?: HttpRequestOptions;
-}
-````
-
-### `AuthContextOptions`
-
-Options controlling how a `GenericAuthContext` is synthesized.
+### v2 callable example
 
 ```ts
-/**
- * Options controlling how a {@link GenericAuthContext} is synthesized.
- *
- * @remarks
- * Use to override token timestamps or App Check behavior on a per-call basis.
- */
-export interface AuthContextOptions {
-  /**
-   * Issued-at time for the ID token (seconds since epoch, or `Date`).
-   * Defaults to `now()` if omitted.
-   */
-  iat?: number | Date;
+import { runWith } from 'firebase-functions/v2';
+import { AuthManager } from '@firebase-bridge/auth-context';
 
-  /**
-   * Session authentication time (seconds since epoch, or `Date`).
-   * Defaults to `iat - 30 minutes` if omitted.
-   */
-  authTime?: number | Date;
+const auth = new AuthManager();
+auth.register('bob', { signInProvider: 'google.com' });
 
-  /**
-   * Expiration time for the ID token (seconds since epoch, or `Date`).
-   * Defaults to `iat + 30 minutes` if omitted.
-   */
-  expires?: number | Date;
+export const greet = runWith({}).https.onCall((req) => {
+  const name = req.data?.name ?? 'stranger';
+  return { message: `Hello, ${name}!`, appId: req.app?.appId ?? 'n/a' };
+});
 
-  /**
-   * Per-invocation App Check override.
-   * - Provide an `AppCheckConstructor` object to override default synthesized token fields.
-   * - Provide `true` or omit to automatically synthesize an app check.
-   * - Provide `false` to omit App Check entirely.
-   */
-  appCheck?: AppCheckConstructor | boolean;
-}
+it('greets bob', async () => {
+  const res = await auth.https.v2.onCall(
+    { key: 'bob', data: { name: 'Bob' } },
+    greet
+  );
+  expect(res.message).toBe('Hello, Bob!');
+});
 ```
 
-### `CallableFunctionsRequest`
+### Request-style handlers (v1 or v2)
 
-Extends **both** `CloudFunctionRequestBase` **and** `AuthContextOptions`, and applies to `onCall()` invocations (v1/v2):
+Request handlers receive a mock Express-like `Request` and a mock `Response` (from `node-mocks-http`). You can shape the request via `options`.
 
-````ts
-/**
- * Request descriptor for v1/v2 **`https.onCall`** tests.
- *
- * @typeParam TKey - Registry key type used to look up the mock identity.
- * @typeParam TData - Callable request payload type.
- *
- * @remarks
- * Firebase clients do not control the low-level HTTP request for `onCall`:
- * method, URL/path, params/query, cookies/sessions, files, and raw body are not user-configurable.
- * Handlers receive `(data, context)` (v1) or a single `CallableRequest` (v2). A `rawRequest`
- * object exists for compatibility, but only limited surface (like headers) is configurable here.
- */
-export interface CallableFunctionRequest<
-  TKey extends AuthKey,
-  TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
-> extends CloudFunctionRequestBase<TKey, TData>,
-    AuthContextOptions {
-  data: TData;
-  /**
-   * Additional HTTP headers to surface on the underlying `rawRequest` snapshot.
-   * (Auth/App Check headers are synthesized by the orchestrator/provider.)
-   *
-   * @example
-   * ```ts
-   * const req: CallableFunctionRequest<'alice', { x: number }> = {
-   *   key: 'alice',
-   *   data: { x: 1 },
-   *   headers: { 'x-test-scenario': 'smoke' },
-   * };
-   * ```
-   */
-  headers?: HttpHeaders;
-}
-````
+```ts
+import { runWith } from 'firebase-functions/v1';
+import { AuthManager } from '@firebase-bridge/auth-context';
 
-> By default, realistic **App Check** data is synthesized for every `onCall` invocation. You can disable or customize this behavior via the `appCheck` option.
+const auth = new AuthManager();
+auth.register('carol', { signInProvider: 'google.com' });
 
-Example:
+const hello = runWith({}).https.onRequest((req, res) => {
+  res.status(200).json({
+    method: req.method,
+    path: req.path,
+    uid: (req as any).auth?.uid ?? null,
+  });
+});
+
+it('invokes request handler as carol', async () => {
+  const response = await auth.https.v1.onRequest(
+    {
+      key: 'carol',
+      options: {
+        method: 'GET',
+        path: '/hello',
+      },
+    },
+    hello
+  );
+
+  expect(response._getStatusCode()).toBe(200);
+  const body = response._getJSONData();
+  expect(body.uid).toMatch(/^uid_/);
+});
+```
+
+---
+
+## Core concepts
+
+### 1. `AuthManager` (primary export)
+
+This is the entry point you’ll use in tests.
+
+* Holds defaults for project, region, and time.
+* Keeps a registry of **identities** keyed by string.
+* Knows how to build realistic **Firebase auth** and **App Check** data per invocation.
+* Produces **inspectable** mock HTTP responses.
+
+**Key members (conceptual):**
+
+* `register(key, identity)` — define who “alice”, “bob”, etc. are.
+* `https.v1.onCall(request, handler)` — call a v1 callable handler with a mock context.
+* `https.v2.onCall(request, handler)` — call a v2 callable handler with a mock context.
+* `https.v1.onRequest(request, handler)` — call a v1 request handler with a mock `Request`/`Response`.
+* `https.v2.onRequest(request, handler)` — same for v2.
+
+> The actual source exports additional request/identity types — those are there to let you describe the call more precisely (custom headers, custom timestamps, explicit App Check, etc.).
+
+### 2. Registered identities
+
+Identities describe what Firebase would have put in `context.auth` (v1) or `req.auth` (v2): provider, UID shape, timestamps, etc. The library generates realistic IDs and OAuth provider IDs so your unit tests don’t drift too far from production.
+
+### 3. Deterministic time
+
+The manager can be constructed with an explicit `now()` so token timestamps, issued-at, and expirations are all stable across tests. This is especially useful if you later assert on token fields.
+
+---
+
+## Per-call overrides
+
+Most request descriptors in this package share a common shape:
+
+* **who** is calling (`key`)
+* **what** they’re sending (`data`)
+* **how** the HTTP request should look (for `onRequest`)
+* **how** tokens should be timestamped or constructed
+
+This is expressed via the exported request types (e.g. `CallableFunctionRequest`, `RawHttpRequest`) that you already have in your source. At test time, you pass a plain object with the relevant fields — the manager fills in the Firebase bits.
+
+### Callable overrides
 
 ```ts
 await auth.https.v2.onCall(
   {
-    key: 'bob',
-    data: { test: true },
-    appCheck: { custom_value: 'custom-token' },
-  },
-  handler
-);
-```
-
-### `RawHttpRequest`
-
-Extends `CloudFunctionRequestBase` and applies to `onRequest()` invocations (v1/v2):
-
-- `key` — identity key for the auth context.
-- `options: HttpRequestOptions` — overrides `Request` properties (`method`, `url`, `body`, `headers`, etc.).
-
-Example:
-
-```ts
-await auth.https.v1.onRequest(
-  {
-    key: 'carol',
-    options: {
-      method: 'POST',
-      body: { value: 42 },
-      headers: { 'content-type': 'application/json' },
+    key: 'alice',
+    data: { ping: true },
+    // token shaping
+    iat: Date.now() / 1000,
+    expires: (Date.now() + 30 * 60_000) / 1000,
+    // raw request decoration
+    headers: {
+      'x-test-scenario': 'v2-callable',
     },
   },
   handler
 );
 ```
 
+### Request overrides
+
+```ts
+await auth.https.v1.onRequest(
+  {
+    key: 'alice',
+    options: {
+      method: 'POST',
+      path: '/widgets?limit=10',
+      headers: { 'content-type': 'application/json' },
+      body: { limit: 10 },
+    },
+  },
+  handler
+);
+```
+
+Behind the scenes the library still synthesizes the Firebase headers (auth, app check, emulator hints, etc.) — you only specify the parts your test actually cares about.
+
+---
+
+## Using it with an app-local façade (recommended pattern)
+
+If your production code already calls something like `MyApp.verifyIdToken(req)` (instead of calling the Admin SDK directly), you can plug `@firebase-bridge/auth-context` straight into that abstraction for tests.
+
+**Example façade:**
+
+```ts
+import { DecodedAppCheckToken } from 'firebase-admin/app-check';
+import { DecodedIdToken } from 'firebase-admin/auth';
+
+export interface FirebaseAppConfig {
+  now: () => Date;
+  appCheckTokenVerifier: (request: Request) => DecodedAppCheckToken | undefined;
+  idTokenVerifier: (request: Request) => DecodedIdToken | undefined;
+}
+
+export class FirebaseApp {
+  private _config: FirebaseAppConfig | undefined;
+
+  private assertConfig(): FirebaseAppConfig {
+    if (this._config) return this._config;
+    throw new Error('init has not been called.');
+  }
+
+  init(config: FirebaseAppConfig): void {
+    if (this._config) throw new Error('init has already been called.');
+    this._config = config;
+  }
+
+  now(): Date {
+    return this.assertConfig().now();
+  }
+
+  verifyAppCheckToken(request: Request) {
+    return this.assertConfig().appCheckTokenVerifier(request);
+  }
+
+  verifyIdToken(request: Request) {
+    return this.assertConfig().idTokenVerifier(request);
+  }
+}
+
+export const MyApp = new FirebaseApp();
+```
+
+**In tests**, initialize it with the mock verifiers exported by `@firebase-bridge/auth-context`:
+
+```ts
+import {
+  getMockAppCheckToken,
+  getMockIdToken,
+} from '@firebase-bridge/auth-context';
+import { MyApp } from './firebase-app';
+
+MyApp.init({
+  now: () => new Date(),
+  appCheckTokenVerifier: getMockAppCheckToken,
+  idTokenVerifier: getMockIdToken,
+});
+```
+
+Now your `onRequest()`-backed APIs can call `MyApp.verifyIdToken(req)` and still get a realistic decoded token — without the real Admin SDK, without networking, and without the Functions emulator. The same façade can be initialized differently in production.
+
 ---
 
 ## Notes on fidelity
 
-- **Auth context** — realistic UID, provider data, claims, and timestamps.
-- **AppCheck** — synthesized automatically (configurable per-call and indirectly via `AuthManagerOptions`).
-- **Request/Response** — fully inspectable mocks from `node-mocks-http`.
-- **Headers & metadata** — follow Firebase conventions (`content-type`, `authorization`, `x-firebase-appcheck`).
+* **Auth context** — realistic UID, provider data, claims, and timestamps.
+* **AppCheck** — synthesized automatically (configurable per-call and indirectly via `AuthManagerOptions`).
+* **Request/Response** — fully inspectable mocks from `node-mocks-http`.
+* **Headers & metadata** — follow Firebase conventions (`content-type`, `authorization`, `x-firebase-appcheck`).
 
 ---
 
 ## Versioning & compatibility
 
-- Peer dependency: `firebase-functions` (v1/v2)
-- Node.js ≥ 18 required.
-- Works with both ESM and CJS TypeScript projects.
+* Peer dependency: `firebase-functions` (v1/v2)
+* Node.js ≥ 18 required.
+* Works with both ESM and CJS TypeScript projects.
 
 ---
 
@@ -461,9 +338,9 @@ await auth.https.v1.onRequest(
 
 This project is in **minimal-maintainer mode**.
 
-- **Issues first.** Open an issue for fidelity or compatibility issues.
-- **PRs limited to:** bug fixes with tests, doc updates, or build hygiene.
-- **Fidelity priority:** any behavioral changes must remain consistent with Cloud Functions v1/v2 semantics.
+* **Issues first.** Open an issue for fidelity or compatibility issues.
+* **PRs limited to:** bug fixes with tests, doc updates, or build hygiene.
+* **Fidelity priority:** any behavioral changes must remain consistent with Cloud Functions v1/v2 semantics.
 
 ---
 
@@ -475,4 +352,4 @@ Apache-2.0 © 2025 Bryce Marshall
 
 ## Trademarks & attribution
 
-This project is **not** affiliated with, associated with, or endorsed by Google LLC. “Firebase” and “Cloud Functions” are trademarks of Google LLC. Names are used solely to identify compatibility and do not imply endorsement.
+This project is **not** affiliated with, associated with, or endorsed by Google LLC. “Firebase” and “Cloud Functions” are trademarks of Google LLC. Names are used solely to identify compatibility and do not imply endo

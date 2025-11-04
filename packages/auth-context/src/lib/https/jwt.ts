@@ -21,6 +21,66 @@
 
 import { DecodedAppCheckToken } from 'firebase-admin/app-check';
 import { DecodedIdToken } from 'firebase-admin/auth';
+import {
+  base64UrlDecode,
+  base64UrlEncode,
+  HeaderKey,
+} from './_internal/util.js';
+
+/**
+ * Extracts and decodes a mock Firebase **Identity (ID) token** from a request's
+ * `Authorization` header, if present.
+ *
+ * This function is designed for use in mock HTTPS request handlers (v1 or v2)
+ * where Firebase Auth is not actually verified but where a realistic JWT-shaped
+ * header value may still be provided.
+ *
+ * It expects the header format:
+ * ```
+ * Authorization: Bearer <mock-jwt>
+ * ```
+ *
+ * If the header is missing, malformed, or decoding fails, `undefined` is returned.
+ *
+ * @param request - The HTTP `Request` (Fetch API or Express-compatible) containing headers.
+ * @returns The decoded `DecodedIdToken` payload, or `undefined` if absent or invalid.
+ *
+ * @example
+ * ```ts
+ * const token = getMockIdToken(req);
+ * if (token) console.log(`Authenticated as ${token.uid}`);
+ * ```
+ */
+export function getMockIdToken(request: Request): DecodedIdToken | undefined {
+  const authHeader = request.headers.get(HeaderKey.Authorization) ?? '';
+  const match = authHeader.match(/^Bearer (.+)$/i);
+
+  return safeDecodeJWT(match?.[1]);
+}
+
+/**
+ * Extracts and decodes a mock Firebase **AppCheck token** from a request's
+ * `X-Firebase-AppCheck` (or equivalent) header, if present.
+ *
+ * This is the AppCheck analogue of {@link getMockIdToken}. It assumes the header
+ * directly contains the mock JWT string (no `"Bearer "` prefix).
+ *
+ * If the header is missing or cannot be decoded, `undefined` is returned.
+ *
+ * @param request - The HTTP `Request` containing headers.
+ * @returns The decoded `DecodedAppCheckToken` payload, or `undefined` if absent or invalid.
+ *
+ * @example
+ * ```ts
+ * const appCheck = getMockAppCheckToken(req);
+ * if (appCheck) console.log(`App verified: ${appCheck.app_id}`);
+ * ```
+ */
+export function getMockAppCheckToken(
+  request: Request
+): DecodedAppCheckToken | undefined {
+  return safeDecodeJWT(request.headers.get(HeaderKey.AppCheck));
+}
 
 /**
  * Encode a decoded Firebase **Identity** token (as produced by admin SDKs)
@@ -112,42 +172,27 @@ function decodeJWT<T>(encoded: string): T {
 }
 
 /**
- * Encode a UTF-8 string to base64url (RFC 7515) form.
+ * Safely decodes a JWT-like string (as produced by {@link encodeJWT}) into a typed
+ * object, suppressing all errors and returning `undefined` for invalid inputs.
  *
- * - Uses standard base64
- * - Strips `=`
- * - Replaces `+` with `-`
- * - Replaces `/` with `_`
+ * This helper provides defensive decoding suitable for request handlers where
+ * malformed or missing headers should not trigger runtime errors.
  *
- * @param value - The string to encode.
- * @returns The base64url-encoded string.
+ * @typeParam T - The expected payload type (e.g. `DecodedIdToken`).
+ * @param encoded - The base64url JWT-like string to decode.
+ * @returns The decoded payload, or `undefined` if the string is missing or invalid.
+ *
+ * @example
+ * ```ts
+ * const token = safeDecodeJWT<DecodedIdToken>(maybeJwt);
+ * if (!token) return res.status(401).send('Invalid token');
+ * ```
  */
-function base64UrlEncode(value: string): string {
-  return Buffer.from(value, 'utf8')
-    .toString('base64')
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
-}
-
-/**
- * Decode a base64url string back to a UTF-8 string.
- *
- * - Restores padding
- * - Reverts `-` → `+` and `_` → `/`
- *
- * @param value - The base64url string to decode.
- * @returns The decoded UTF-8 string.
- * @throws If the input cannot be padded to valid base64.
- */
-function base64UrlDecode(value: string): string {
-  let base64 = value.replace(/-/g, '+').replace(/_/g, '/');
-  const pad = base64.length % 4;
-  if (pad === 2) base64 += '==';
-  else if (pad === 3) base64 += '=';
-  else if (pad !== 0) {
-    throw new Error('Invalid base64url string.');
+function safeDecodeJWT<T>(encoded: string | undefined | null): T | undefined {
+  if (!encoded) return undefined;
+  try {
+    return decodeJWT(encoded);
+  } catch {
+    return undefined;
   }
-
-  return Buffer.from(base64, 'base64').toString('utf8');
 }

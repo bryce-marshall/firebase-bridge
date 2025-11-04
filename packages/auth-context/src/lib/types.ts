@@ -124,6 +124,15 @@ type StripIndexSignature<T> = {
     : never]: T[K];
 };
 
+/**
+ * Canonical shortcut names for sign-in providers that the mock can synthesize.
+ *
+ * @remarks
+ * - `'custom'` → use when you want the identity to represent a custom-token
+ *   sign-in (i.e. not backed by a first-party provider).
+ * - `'anonymous'` → use when you want an anonymous sign-in with no provider
+ *   identities attached.
+ */
 export type AutoProvider =
   | 'google'
   | 'microsoft'
@@ -143,17 +152,45 @@ export type AutoProvider =
  * Lightweight constructor type for registering identities.
  *
  * @remarks
- * - Accepts a partial subset of {@link MockIdentity} (without the `firebase` block).
- * - Allows a partial {@link FirebaseIdentities} via the `firebase` property.
- * - Additional arbitrary claims are permitted.
+ * This is deliberately more permissive than {@link MockIdentity}:
+ *
+ * - You can provide any subset of the explicit `MockIdentity` properties
+ *   **except** the `firebase` block (that stays normalized by the provider).
+ * - You may provide a **partial** {@link FirebaseIdentities} in `firebase`,
+ *   which will be completed/normalized (for example, sign-in provider,
+ *   identities bucket) by the auth provider.
+ * - You may provide arbitrary additional claims via `claims`; these are
+ *   merged onto the resulting {@link MockIdentity} so tests can emulate
+ *   custom claims / multi-tenant / role flags.
  */
 export interface IdentityConstructor
   extends Partial<Omit<StripIndexSignature<MockIdentity>, 'firebase'>> {
-  /** Partial `firebase` provider metadata; missing fields are normalized by the provider. */
+  /**
+   * Partial `firebase` provider metadata; any missing fields are filled by
+   * the provider (for example, inferred `sign_in_provider` and per-provider
+   * identity buckets).
+   */
   firebase?: Partial<FirebaseIdentities>;
-  /** The sign-in provider data to synthesize. Defaults to 'password'. */
+
+  /**
+   * The sign-in provider to synthesize if one is not already present in
+   * `firebase.sign_in_provider`.
+   *
+   * @remarks
+   * This accepts simplified aliases (e.g. `'google'`, `'apple'`) which are
+   * later normalized to canonical Firebase provider IDs (e.g. `'google.com'`).
+   * Defaults to `'password'` for convenience if neither this nor a
+   * provider-id in `firebase` is supplied.
+   */
   signInProvider?: AutoProvider;
-  /** Additional arbitrary claims included in the ID token. */
+
+  /**
+   * Additional arbitrary claims to materialize on the final identity.
+   *
+   * @remarks
+   * These are copied onto the resulting {@link MockIdentity} after
+   * normalization so you can model custom/tenant/role claims in tests.
+   */
   claims?: Record<string, unknown>;
 }
 
@@ -214,28 +251,62 @@ export interface AppCheckData {
   alreadyConsumed?: boolean;
 }
 
+/**
+ * Portion of the request context that describes the Firebase application
+ * making the call.
+ *
+ * @remarks
+ * This part is always present, regardless of whether the caller is
+ * authenticated. It carries the human-readable project ID and, when present,
+ * the App Check payload attached to the invocation.
+ */
 interface RequestAppPart {
   /**
-   * Firebase **project ID** (human-readable).
+   * Firebase **project ID** (human-readable) that the mock request is being
+   * executed against.
    */
   projectId: string;
+
   /**
    * App Check payload, if present for the invocation.
+   *
+   * @remarks
+   * This is synthesized by the mock provider (for example, {@link AuthManager})
+   * and mirrors what callable/HTTP handlers receive in Firebase Functions.
    */
   app?: AppCheckData;
 }
 
+/**
+ * Portion of the request context that exists only when the caller is
+ * authenticated.
+ *
+ * @remarks
+ * These are the time-based claims and identity template used to build the
+ * version-specific auth objects (`context.auth`, `request.auth`, etc.).
+ * In the authenticated case, all of these are concrete; in the unauthenticated
+ * case we deliberately replace them with `undefined` via
+ * {@link Undefinedify<RequestIdentityPart>} to preserve shape but signal
+ * absence.
+ */
 interface RequestIdentityPart {
   /**
-   * Static identity template used to construct `AuthData`.
+   * Static identity template used to construct `DecodedIdToken`/`AuthData`
+   * for the call.
+   *
+   * @remarks
+   * This is **not** a raw JWT — it is the normalized identity stored in the
+   * mock registry (for example, by {@link AuthManager.register}).
    */
   identity: MockIdentity;
 
   /**
-   * Time (seconds since Unix epoch) when end-user authentication occurred for the session.
+   * Time (seconds since Unix epoch) when end-user authentication occurred
+   * for the session.
    *
    * @remarks
-   * This is stable across token refreshes within the same session; see also {@link iat}.
+   * This remains stable across token refreshes within a single session.
+   * See also {@link iat} for the per-token issuance time.
    */
   auth_time: number;
 
@@ -243,7 +314,8 @@ interface RequestIdentityPart {
    * ID token expiration time (seconds since Unix epoch).
    *
    * @remarks
-   * Firebase SDKs refresh ID tokens transparently (typically hourly).
+   * Firebase SDKs refresh ID tokens transparently (typically hourly) — this
+   * mirrors that behavior in tests.
    */
   exp: number;
 
@@ -251,21 +323,41 @@ interface RequestIdentityPart {
    * ID token issued-at time (seconds since Unix epoch).
    *
    * @remarks
-   * Updates on refresh; for the initial sign-in time, use {@link auth_time}.
+   * This updates on refresh. For the original login time, use {@link auth_time}.
    */
   iat: number;
 }
 
+/**
+ * Request context for calls that do **not** provide an authenticated identity.
+ *
+ * @remarks
+ * - Always contains the application part ({@link RequestAppPart}).
+ * - Contains the **shape** of {@link RequestIdentityPart}, but all of its
+ *   properties are forced to `undefined` via {@link Undefinedify}, so your
+ *   downstream logic can safely narrow on the presence/absence of identity
+ *   fields without optional-chaining everything.
+ * - This mirrors Firebase Functions’ behavior where `context.auth` /
+ *   `request.auth` is absent for unauthenticated invocations, but keeps the
+ *   TypeScript shape stable across authenticated/unauthenticated branches.
+ */
 export interface UnauthenticatedRequestContext
   extends RequestAppPart,
     Undefinedify<RequestIdentityPart> {}
 
 /**
- * Version-agnostic authentication context bridged into v1/v2 request types.
+ * Version-agnostic authentication context for **authenticated** requests.
  *
  * @remarks
- * Providers (e.g., `AuthManager`) generate this structure, and handlers transform
- * it into version-specific contexts (`CallableContext`, `CallableRequest`, etc.).
+ * This is the concrete form produced when a key is provided to the provider
+ * (for example, {@link AuthManager.context} with `options.key`):
+ *
+ * - It always has the app part ({@link RequestAppPart})
+ * - It always has the identity part ({@link RequestIdentityPart})
+ * - Times (`iat`, `auth_time`, `exp`) are already normalized
+ *
+ * Handlers (v1 **and** v2) take this structure and map it to
+ * `CallableContext`, `CallableRequest`, or express-style request extensions.
  */
 export interface AuthenticatedRequestContext
   extends RequestAppPart,
@@ -294,45 +386,65 @@ export interface AuthData {
 export type AuthKey = string | number;
 
 /**
- * Options controlling how a {@link AuthenticatedRequestContext} is synthesized.
+ * Options controlling how a {@link AuthenticatedRequestContext} or
+ * {@link UnauthenticatedRequestContext} is synthesized for a single call.
+ *
+ * @typeParam TKey - Registry key type used to look up identities.
  *
  * @remarks
- * Use to override token timestamps or App Check behavior on a per-call basis.
+ * - If `key` is provided, an **authenticated** context is produced.
+ * - If `key` is omitted, an **unauthenticated** context is produced, but the
+ *   app part and (optionally) App Check are still present.
+ * - Time values accept either epoch-seconds or `Date` and are normalized.
  */
 export interface AuthContextOptions<TKey extends AuthKey = AuthKey> {
   /**
-   * Identity registry key used to resolve the identity from `AuthManager`.
-   * Omit for a non-authenticated request.
+   * Identity registry key used to resolve the identity from the provider
+   * (for example, {@link AuthManager}).
+   *
+   * @remarks
+   * Omit this to generate an unauthenticated context.
    */
   key?: TKey;
+
   /**
-   * Issued-at time for the ID token (seconds since epoch, or `Date`).
-   * Defaults to `now()` if omitted.
+   * Issued-at time for the ID token.
    *
-   * Not applied if `key` is not provided.
+   * @remarks
+   * - Accepts seconds since epoch or a `Date`.
+   * - Defaults to `now()` when omitted.
+   * - Ignored when `key` is not provided (i.e. unauthenticated).
    */
   iat?: number | Date;
 
   /**
-   * Session authentication time (seconds since epoch, or `Date`).
-   * Defaults to `iat - 30 minutes` if omitted.
+   * Session authentication time.
    *
-   * Not applied if `key` is not provided.
+   * @remarks
+   * - Accepts seconds since epoch or a `Date`.
+   * - Defaults to `iat - 30 minutes` when omitted.
+   * - Ignored when `key` is not provided.
    */
   authTime?: number | Date;
 
   /**
-   * Expiration time for the ID token (seconds since epoch, or `Date`).
-   * Defaults to `iat + 30 minutes` if omitted.
+   * Expiration time for the ID token.
    *
-   * Not applied if `key` is not provided.
+   * @remarks
+   * - Accepts seconds since epoch or a `Date`.
+   * - Defaults to `iat + 30 minutes` when omitted.
+   * - Ignored when `key` is not provided.
    */
   expires?: number | Date;
+
   /**
    * Per-invocation App Check override.
-   * - Provide an `AppCheckConstructor` object to override default synthesized token fields.
-   * - Provide `true` or omit to automatically synthesize an app check.
-   * - Provide `false` to omit App Check entirely.
+   *
+   * @remarks
+   * - `true` or omitted → synthesize a default App Check token.
+   * - `false` → omit App Check entirely.
+   * - object → use the provided {@link AppCheckConstructor} as a seed and
+   *   normalize missing fields.
    */
   appCheck?: AppCheckConstructor | boolean;
 }
