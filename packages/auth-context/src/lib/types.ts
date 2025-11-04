@@ -1,5 +1,6 @@
 import { DecodedAppCheckToken } from 'firebase-admin/app-check';
 import { DecodedIdToken } from 'firebase-admin/auth';
+import { Undefinedify } from './_internal/util.js';
 
 /**
  * Authentication provider metadata embedded inside ID tokens under the
@@ -213,25 +214,18 @@ export interface AppCheckData {
   alreadyConsumed?: boolean;
 }
 
-export interface RequestContext {
-  /**
-   * App Check payload, if present for the invocation.
-   */
-  app?: AppCheckData;
+interface RequestAppPart {
   /**
    * Firebase **project ID** (human-readable).
    */
   projectId: string;
+  /**
+   * App Check payload, if present for the invocation.
+   */
+  app?: AppCheckData;
 }
 
-/**
- * Version-agnostic authentication context bridged into v1/v2 request types.
- *
- * @remarks
- * Providers (e.g., `AuthManager`) generate this structure, and handlers transform
- * it into version-specific contexts (`CallableContext`, `CallableRequest`, etc.).
- */
-export interface GenericAuthContext extends RequestContext {
+interface RequestIdentityPart {
   /**
    * Static identity template used to construct `AuthData`.
    */
@@ -262,6 +256,21 @@ export interface GenericAuthContext extends RequestContext {
   iat: number;
 }
 
+export interface UnauthenticatedRequestContext
+  extends RequestAppPart,
+    Undefinedify<RequestIdentityPart> {}
+
+/**
+ * Version-agnostic authentication context bridged into v1/v2 request types.
+ *
+ * @remarks
+ * Providers (e.g., `AuthManager`) generate this structure, and handlers transform
+ * it into version-specific contexts (`CallableContext`, `CallableRequest`, etc.).
+ */
+export interface AuthenticatedRequestContext
+  extends RequestAppPart,
+    RequestIdentityPart {}
+
 /**
  * Metadata about the authorization used to invoke a function.
  *
@@ -284,7 +293,41 @@ export interface AuthData {
  */
 export type AuthKey = string | number;
 
-export interface RequestContextOptions {
+/**
+ * Options controlling how a {@link AuthenticatedRequestContext} is synthesized.
+ *
+ * @remarks
+ * Use to override token timestamps or App Check behavior on a per-call basis.
+ */
+export interface AuthContextOptions<TKey extends AuthKey = AuthKey> {
+  /**
+   * Identity registry key used to resolve the identity from `AuthManager`.
+   * Omit for a non-authenticated request.
+   */
+  key?: TKey;
+  /**
+   * Issued-at time for the ID token (seconds since epoch, or `Date`).
+   * Defaults to `now()` if omitted.
+   *
+   * Not applied if `key` is not provided.
+   */
+  iat?: number | Date;
+
+  /**
+   * Session authentication time (seconds since epoch, or `Date`).
+   * Defaults to `iat - 30 minutes` if omitted.
+   *
+   * Not applied if `key` is not provided.
+   */
+  authTime?: number | Date;
+
+  /**
+   * Expiration time for the ID token (seconds since epoch, or `Date`).
+   * Defaults to `iat + 30 minutes` if omitted.
+   *
+   * Not applied if `key` is not provided.
+   */
+  expires?: number | Date;
   /**
    * Per-invocation App Check override.
    * - Provide an `AppCheckConstructor` object to override default synthesized token fields.
@@ -292,60 +335,4 @@ export interface RequestContextOptions {
    * - Provide `false` to omit App Check entirely.
    */
   appCheck?: AppCheckConstructor | boolean;
-}
-
-/**
- * Options controlling how a {@link GenericAuthContext} is synthesized.
- *
- * @remarks
- * Use to override token timestamps or App Check behavior on a per-call basis.
- */
-export interface AuthContextOptions extends RequestContextOptions {
-  /**
-   * Issued-at time for the ID token (seconds since epoch, or `Date`).
-   * Defaults to `now()` if omitted.
-   */
-  iat?: number | Date;
-
-  /**
-   * Session authentication time (seconds since epoch, or `Date`).
-   * Defaults to `iat - 30 minutes` if omitted.
-   */
-  authTime?: number | Date;
-
-  /**
-   * Expiration time for the ID token (seconds since epoch, or `Date`).
-   * Defaults to `iat + 30 minutes` if omitted.
-   */
-  expires?: number | Date;
-}
-
-/**
- * Contract for components that supply identities and synthesized auth contexts.
- *
- * @typeParam TKey - Registry key type used to look up identities.
- *
- * @remarks
- * Implemented by `AuthManager`; test code typically depends on this interface indirectly
- * via handlers/brokers. Returned values should be deep-cloned to avoid external mutation.
- */
-export interface AuthProvider<TKey extends AuthKey> {
-  /**
-   * Retrieve a deep-cloned identity template by key.
-   *
-   * @returns The identity if registered; otherwise `undefined`.
-   */
-  identity(key: TKey): MockIdentity | undefined;
-
-  requestContext(options?: RequestContextOptions): RequestContext;
-  /**
-   * Build a generic auth context for the given identity key.
-   *
-   * @param key - Identity key.
-   * @param options - Optional overrides for timestamps and App Check.
-   * @returns A new {@link GenericAuthContext} suitable for v1/v2 adaptation.
-   *
-   * @throws {Error} Implementations may throw if the key is not registered.
-   */
-  authContext(key: TKey, options?: AuthContextOptions): GenericAuthContext;
 }

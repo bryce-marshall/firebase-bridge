@@ -3,6 +3,7 @@ import {
   HttpsFunction,
   Request as V2Request,
 } from 'firebase-functions/v2/https';
+import { AuthProvider } from '../_internal/types.js';
 import { cloneDeep, execPromise, JustCallable } from '../_internal/util.js';
 import { buildAuthData, execAndAwaitResponse } from '../http/_internal/util.js';
 import { mockHttpRequest } from '../http/mock-http-request.js';
@@ -12,10 +13,9 @@ import {
 } from '../http/mock-http-response.js';
 import { CloudFunctionsParsedBody, HttpRequestOptions } from '../http/types.js';
 import {
+  AuthenticatedRequestContext,
   AuthKey,
-  AuthProvider,
-  GenericAuthContext,
-  RequestContext,
+  UnauthenticatedRequestContext,
 } from '../types.js';
 import { CallableFunctionRequest, RawHttpRequest } from './types.js';
 import { applyFunctionMeta } from './util.js';
@@ -90,10 +90,11 @@ export class HttpsV2Handler<TKey extends AuthKey> {
    * ```
    */
   onRequest<TData extends CloudFunctionsParsedBody>(
-    request: RawHttpRequest<TData>,
+    request: RawHttpRequest<TKey, TData>,
     handler: RequestHandlerV2
   ): Promise<MockHttpResponse> {
-    const context = toRequestContext(request);
+    const generic = this._provider.authContext(request);
+    const context = toRequestContext(request, generic);
 
     return execAndAwaitResponse<void>(
       () => handler(context.request, context.response),
@@ -112,7 +113,7 @@ export class HttpsV2Handler<TKey extends AuthKey> {
    * @returns A promise resolving to the callable’s returned value.
    *
    * @remarks
-   * - Obtains a {@link GenericAuthContext} from the provider for `request.key`.
+   * - Obtains a {@link AuthenticatedRequestContext} from the provider for `request.key`.
    * - Converts it to a v2 {@link CallableRequest} via {@link toCallableRequest}, including:
    *   - `data` (from the test),
    *   - `auth` (derived from identity),
@@ -136,9 +137,7 @@ export class HttpsV2Handler<TKey extends AuthKey> {
     request: CallableFunctionRequest<TKey, TData>,
     handler: CallableHandlerV2<TData, TResponse>
   ): Promise<TResponse> {
-    const context = request.key
-      ? this._provider.authContext(request.key, request)
-      : this._provider.requestContext(request);
+    const context = this._provider.authContext(request);
     const callableReq = toCallableRequest(request, context);
 
     return execPromise(() => handler(callableReq));
@@ -175,7 +174,7 @@ export class HttpsV2Handler<TKey extends AuthKey> {
     httpsFunction: HttpsFunction
   ): Promise<TResponse> {
     // v2 callable functions accept a single CallableRequest<T> argument.
-    const generic = this._provider.requestContext(request);
+    const generic = this._provider.authContext(request);
     const callableReq = toCallableRequest(request, generic);
 
     return execPromise(() =>
@@ -201,14 +200,23 @@ export class HttpsV2Handler<TKey extends AuthKey> {
  * - Clones user-provided {@link HttpRequestOptions} to avoid mutation.
  * - Applies function metadata via {@link applyFunctionMeta}.
  */
-function toRequestContext<TData extends CloudFunctionsParsedBody>(
-  request: RawHttpRequest<TData>
+function toRequestContext<
+  TKey extends AuthKey,
+  TData extends CloudFunctionsParsedBody
+>(
+  request: RawHttpRequest<TKey, TData>,
+  generic: UnauthenticatedRequestContext | AuthenticatedRequestContext
 ): {
   request: V2Request;
   response: MockHttpResponse;
 } {
   const options: HttpRequestOptions = cloneDeep(request.options ?? {});
-  applyFunctionMeta(request, options, /* onCallMode */ false);
+  const auth = buildAuthData(generic);
+  applyFunctionMeta(request, options, {
+    onCallMode: false,
+    appCheck: generic.app?.token,
+    id: auth?.token,
+  });
   const rawRequest = mockHttpRequest(options);
   const response = mockHttpResponse();
 
@@ -240,16 +248,20 @@ function toCallableRequest<
   TData extends CloudFunctionsParsedBody
 >(
   request: CallableFunctionRequest<TKey, TData>,
-  generic: RequestContext | GenericAuthContext
+  generic: UnauthenticatedRequestContext | AuthenticatedRequestContext
 ): CallableRequest<TData> {
   // Build underlying raw request (Express-ish) with callable defaults
   const headers = cloneDeep(request.headers) ?? {};
   const options: HttpRequestOptions = { headers };
-  applyFunctionMeta(request, options, /* onCallMode */ true);
+  const auth = buildAuthData(generic);
+  applyFunctionMeta(request, options, {
+    onCallMode: true,
+    appCheck: generic.app?.token,
+    id: auth?.token,
+  });
   const rawRequest = mockHttpRequest(options); // kept internal; no need to expose if not part of v2 type
 
   // Auth / App are surfaced on request in v2
-  const auth = buildAuthData(generic);
   const callableReq: CallableRequest<TData> = {
     data: request.data,
     auth,

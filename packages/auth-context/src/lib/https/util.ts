@@ -1,13 +1,36 @@
-import { DEFAULT_PROJECT_ID, DEFAULT_REGION } from '../_internal/constants.js';
+import { DecodedAppCheckToken } from 'firebase-admin/app-check';
+import { DecodedIdToken } from 'firebase-admin/auth';
+import { DEFAULT_PROJECT_ID, DEFAULT_REGION } from '../_internal/types.js';
 import { cloneDeep, defaultString } from '../_internal/util.js';
 import { CloudFunctionsParsedBody, HttpRequestOptions } from '../http/types.js';
+import { encodeAppCheckToken, encodeIdToken } from '../http/util.js';
+import { AuthKey } from '../types.js';
 import { CloudFunctionRequestBase } from './types.js';
+
+const CONTENT_TYPE_JSON = 'application/json';
+
+export interface FunctionMetaDataOptions {
+  onCallMode: boolean;
+  appCheck?: DecodedAppCheckToken;
+  id?: DecodedIdToken;
+}
+
+/**
+ * Http header keys (standard and custom) replicating the Firebase environment.
+ */
+enum HeaderKey {
+  Host = 'host',
+  ContentType = 'content-type',
+  Authorization = 'authorization',
+  ForwardedProto = 'x-forwarded-proto',
+  AppCheck = 'x-firebase-appcheck',
+}
 
 /**
  * Populate/normalize HTTP request metadata for a Cloud Function invocation.
  *
  * @param request - High-level function request descriptor (identity key, region, project, emulator flag, etc.).
- * @param options - Low-level HTTP request options object to **mutate** (URL, method, headers, etc.).
+ * @param httpOptions - Low-level HTTP request options object to **mutate** (URL, method, headers, etc.).
  * @param onCallMode - If `true`, enforce callable (`onCall`) defaults (e.g., `POST`, JSON body, synthesized URL).
  *
  * @remarks
@@ -38,19 +61,21 @@ import { CloudFunctionRequestBase } from './types.js';
  *     or they are undefined/empty.
  */
 export function applyFunctionMeta(
-  request: CloudFunctionRequestBase<CloudFunctionsParsedBody>,
-  options: HttpRequestOptions,
-  onCallMode: boolean
+  request: CloudFunctionRequestBase<AuthKey, CloudFunctionsParsedBody>,
+  httpOptions: HttpRequestOptions,
+  fnOptions: FunctionMetaDataOptions
 ): void {
   const region = defaultString(request?.region, DEFAULT_REGION);
   const project = defaultString(request?.project, DEFAULT_PROJECT_ID);
   const asEmulator = !!request.asEmulator;
+  const onCallMode = fnOptions.onCallMode === true;
+
   if (request.data) {
-    options.body = cloneDeep(request.data);
+    httpOptions.body = cloneDeep(request.data);
   }
 
   // In callable mode (or missing URL), synthesize a canonical path.
-  if (onCallMode || !options.url) {
+  if (onCallMode || !httpOptions.url) {
     const functionName = defaultString(
       request?.functionName,
       'defaultFunction'
@@ -59,26 +84,26 @@ export function applyFunctionMeta(
       ? `/${project}/${region}/${functionName}`
       : `/${functionName}`;
 
-    options.url = path;
-    options.originalUrl = path;
-    options.path = path;
-    options.baseUrl = '';
+    httpOptions.url = path;
+    httpOptions.originalUrl = path;
+    httpOptions.path = path;
+    httpOptions.baseUrl = '';
   }
 
   // Ensure a headers bag, then add defaults only if missing/empty.
-  const headers = options.headers ?? (options.headers = {});
+  const headers = httpOptions.headers ?? (httpOptions.headers = {});
   /**
    * Determine whether a header is missing or effectively empty.
    *
    * @internal
    */
-  function noHeader(key: string): boolean {
+  function noHeader(key: HeaderKey): boolean {
     const value = headers[key];
     return (value == undefined || !value.length) ?? 0 === 0;
   }
 
   // Host header
-  if (noHeader('host')) {
+  if (noHeader(HeaderKey.Host)) {
     const host = asEmulator
       ? `127.0.0.1:5001`
       : `${region}-${project}.cloudfunctions.net`;
@@ -86,26 +111,40 @@ export function applyFunctionMeta(
   }
 
   // Forwarded proto
-  if (noHeader('x-forwarded-proto')) {
-    headers['x-forwarded-proto'] ??= asEmulator ? 'http' : 'https';
+  if (noHeader(HeaderKey.ForwardedProto)) {
+    headers[HeaderKey.ForwardedProto] ??= asEmulator ? 'http' : 'https';
   }
 
   // Method
-  if (onCallMode || !options.method) {
-    options.method = 'POST';
+  if (onCallMode || !httpOptions.method) {
+    httpOptions.method = 'POST';
+  }
+
+  if (fnOptions.id && noHeader(HeaderKey.Authorization)) {
+    headers.authorization = `Bearer ${encodeIdToken(fnOptions.id)}`;
+  }
+
+  if (fnOptions.appCheck && noHeader(HeaderKey.AppCheck)) {
+    headers[HeaderKey.AppCheck] = encodeAppCheckToken(fnOptions.appCheck);
   }
 
   // Content type
-  if (onCallMode || noHeader('content-type')) {
+  if (onCallMode || noHeader(HeaderKey.ContentType)) {
     // onRequest: multipart if files are present (callable never uses multipart)
-    if (!onCallMode && options.files && Object.keys(options.files).length > 0) {
-      const existing = headers['content-type'];
+    if (
+      !onCallMode &&
+      httpOptions.files &&
+      Object.keys(httpOptions.files).length > 0
+    ) {
+      const existing = headers[HeaderKey.ContentType];
       const boundary =
         existing?.match(/boundary=([^;]+)/i)?.[1] ?? '----firebase-bridge-mock';
 
-      headers['content-type'] = `multipart/form-data; boundary=${boundary}`;
+      headers[
+        HeaderKey.ContentType
+      ] = `multipart/form-data; boundary=${boundary}`;
     } else {
-      const body = options.body;
+      const body = httpOptions.body;
 
       // Helper: is URL-encoded candidate (flat k=v / k=[v1,v2] shape)
       const isUrlEncoded =
@@ -123,12 +162,12 @@ export function applyFunctionMeta(
 
       if (onCallMode) {
         // Callable is always JSON
-        ctype = 'application/json';
+        ctype = CONTENT_TYPE_JSON;
       } else if (isUrlEncoded) {
         ctype = 'application/x-www-form-urlencoded';
       } else if (Array.isArray(body) || typeof body === 'object') {
         // Treat objects/arrays as JSON
-        ctype = 'application/json';
+        ctype = CONTENT_TYPE_JSON;
       } else if (typeof body === 'string') {
         ctype = 'text/plain; charset=utf-8';
       } else if (body == null) {
@@ -136,10 +175,10 @@ export function applyFunctionMeta(
         ctype = undefined;
       } else {
         // Fallback
-        ctype = 'application/json';
+        ctype = CONTENT_TYPE_JSON;
       }
 
-      if (ctype) headers['content-type'] = ctype;
+      if (ctype) headers[HeaderKey.ContentType] = ctype;
     }
   }
 }

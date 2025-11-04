@@ -1,5 +1,6 @@
 import { HttpsFunction, Runnable } from 'firebase-functions/v1';
 import { CallableContext, Request } from 'firebase-functions/v1/https';
+import { AuthProvider } from '../_internal/types.js';
 import { cloneDeep, execPromise, JustCallable } from '../_internal/util.js';
 import { buildAuthData, execAndAwaitResponse } from '../http/_internal/util.js';
 import { mockHttpRequest } from '../http/mock-http-request.js';
@@ -9,11 +10,9 @@ import {
 } from '../http/mock-http-response.js';
 import { CloudFunctionsParsedBody, HttpRequestOptions } from '../http/types.js';
 import {
-  AuthData,
+  AuthenticatedRequestContext,
   AuthKey,
-  AuthProvider,
-  GenericAuthContext,
-  RequestContext,
+  UnauthenticatedRequestContext,
 } from '../types.js';
 import { CallableFunctionRequest, RawHttpRequest } from './types.js';
 import { applyFunctionMeta } from './util.js';
@@ -86,10 +85,11 @@ export class HttpsV1Handler<TKey extends AuthKey> {
    * ```
    */
   onRequest<TData extends CloudFunctionsParsedBody>(
-    request: RawHttpRequest<TData>,
+    request: RawHttpRequest<TKey, TData>,
     handler: RequestHandlerV1
   ): Promise<MockHttpResponse> {
-    const context = toRequestContext(request);
+    const generic = this._provider.authContext(request);
+    const context = toRequestContext(request, generic);
 
     return execAndAwaitResponse<void>(
       () => handler(context.request, context.response),
@@ -108,7 +108,7 @@ export class HttpsV1Handler<TKey extends AuthKey> {
    * @returns A promise resolving to the callable's returned value.
    *
    * @remarks
-   * - Obtains a {@link GenericAuthContext} from the provider for `request.key`.
+   * - Obtains a {@link AuthenticatedRequestContext} from the provider for `request.key`.
    * - Converts it to a v1 {@link CallableContext} via {@link toCallableContext}, including:
    *   - `auth` (derived from the identity),
    *   - `rawRequest` (mocked), and
@@ -130,10 +130,7 @@ export class HttpsV1Handler<TKey extends AuthKey> {
     request: CallableFunctionRequest<TKey, TData>,
     handler: CallableHandlerV1<TData, TResponse>
   ): Promise<TResponse> {
-    const context = request.key
-      ? this._provider.authContext(request.key, request)
-      : this._provider.requestContext(request);
-      
+    const context = this._provider.authContext(request);
     const nativeContext = toCallableContext(request, context);
 
     return execPromise(() => handler(request.data, nativeContext));
@@ -169,7 +166,7 @@ export class HttpsV1Handler<TKey extends AuthKey> {
     request: CallableFunctionRequest<TKey, TData>,
     runnable: HttpsFunction & Runnable<TData>
   ): Promise<TResponse> {
-    const context = this._provider.requestContext(request);
+    const context = this._provider.authContext(request);
     const nativeContext = toCallableContext(request, context);
 
     return execPromise(() => runnable.run(request.data, nativeContext));
@@ -191,14 +188,23 @@ export class HttpsV1Handler<TKey extends AuthKey> {
  * - Clones user‐provided `HttpRequestOptions` to avoid mutation.
  * - Applies function metadata via {@link applyFunctionMeta}.
  */
-function toRequestContext<TData extends CloudFunctionsParsedBody>(
-  request: RawHttpRequest<TData>
+function toRequestContext<
+  TKey extends AuthKey,
+  TData extends CloudFunctionsParsedBody
+>(
+  request: RawHttpRequest<TKey, TData>,
+  generic: UnauthenticatedRequestContext | AuthenticatedRequestContext
 ): {
   request: Request;
   response: MockHttpResponse;
 } {
   const options: HttpRequestOptions = cloneDeep(request.options) ?? {};
-  applyFunctionMeta(request, options, false);
+  const auth = buildAuthData(generic);
+  applyFunctionMeta(request, options, {
+    onCallMode: false,
+    appCheck: generic.app?.token,
+    id: auth?.token,
+  });
   const rawRequest = mockHttpRequest(options);
   const response = mockHttpResponse();
 
@@ -227,14 +233,18 @@ function toCallableContext<
   TData extends CloudFunctionsParsedBody
 >(
   request: CallableFunctionRequest<TKey, TData>,
-  generic: RequestContext | GenericAuthContext
+  generic: UnauthenticatedRequestContext | AuthenticatedRequestContext
 ): CallableContext {
   const auth = buildAuthData(generic);
   const headers = cloneDeep(request.headers) ?? {};
   const options: HttpRequestOptions = {
     headers,
   };
-  applyFunctionMeta(request, options, true);
+  applyFunctionMeta(request, options, {
+    onCallMode: true,
+    appCheck: generic.app?.token,
+    id: auth?.token,
+  });
   const rawRequest = mockHttpRequest(options);
 
   const result: CallableContext = {

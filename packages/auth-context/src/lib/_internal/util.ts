@@ -6,6 +6,14 @@ export type JustCallable<T> = T extends { (...args: infer A): infer R }
   : never;
 
 /**
+ * Make every key in T optional, but if it’s present,
+ * its value must be exactly `undefined`.
+ */
+export type Undefinedify<T> = {
+  [K in keyof T]?: undefined;
+};
+
+/**
  * Normalize a possibly-sync function into a Promise.
  *
  * @typeParam T - The return type of the executor.

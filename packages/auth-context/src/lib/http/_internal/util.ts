@@ -1,7 +1,7 @@
 import { DecodedIdToken } from 'firebase-admin/auth';
 import { AuthData } from 'firebase-functions/tasks';
 import { execPromise } from '../../_internal/util.js';
-import { GenericAuthContext, RequestContext } from '../../types.js';
+import { AuthenticatedRequestContext, UnauthenticatedRequestContext } from '../../types.js';
 import { MockHttpResponse } from '../mock-http-response.js';
 
 /**
@@ -23,13 +23,13 @@ export function formatIss(projectNumber: string): string {
  * @remarks
  * - The returned `uid` mirrors the identity’s `uid` (i.e., the `sub` claim).
  * - The returned token is a **decoded** shape that merges standard JWT claims
- *   with fields from {@link GenericAuthContext} identity.
+ *   with fields from {@link AuthenticatedRequestContext} identity.
  */
 export function buildAuthData(
-  context: RequestContext | GenericAuthContext
+  context: UnauthenticatedRequestContext | AuthenticatedRequestContext
 ): AuthData | undefined {
-  if ((context as GenericAuthContext).identity == undefined) return undefined;
-  const token = buildToken(context as GenericAuthContext);
+  if ((context as AuthenticatedRequestContext).identity == undefined) return undefined;
+  const token = buildToken(context as AuthenticatedRequestContext);
 
   return { uid: token.uid as string, token };
 }
@@ -48,7 +48,7 @@ export function buildAppData(app?: { appId: string; token?: unknown }) {
 }
 
 /**
- * Construct a `DecodedIdToken` from a {@link GenericAuthContext}.
+ * Construct a `DecodedIdToken` from a {@link AuthenticatedRequestContext}.
  *
  * @internal
  *
@@ -60,7 +60,7 @@ export function buildAppData(app?: { appId: string; token?: unknown }) {
  * - `aud` is the project id.
  * - Identity fields are spread into the token to emulate decoded ID token structure.
  */
-function buildToken(context: GenericAuthContext): DecodedIdToken {
+function buildToken(context: AuthenticatedRequestContext): DecodedIdToken {
   const uid = context.identity.uid;
   return {
     sub: uid,

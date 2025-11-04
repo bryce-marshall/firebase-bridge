@@ -18,8 +18,9 @@ import { AuthContextOptions, AuthKey } from '../types.js';
  * - `functionName` is advisory metadata used by helpers to annotate the request (helpful in logs or routing).
  */
 export interface CloudFunctionRequestBase<
+  TKey extends AuthKey,
   TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
-> {
+> extends AuthContextOptions<TKey> {
   /**
    * Logical payload for the call. For `onCall`, this becomes `request.data`;
    * for `onRequest`, helpers may serialize/embed as the HTTP body depending on the mock.
@@ -64,13 +65,8 @@ export interface CloudFunctionRequestBase<
 export interface CallableFunctionRequest<
   TKey extends AuthKey,
   TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
-> extends CloudFunctionRequestBase<TData>,
-    AuthContextOptions {
-  /**
-   * Identity registry key used to build the auth context for this invocation.
-   * Omit for a non-authenticated request.
-   */
-  key?: TKey;
+> extends CloudFunctionRequestBase<TKey, TData>,
+    AuthContextOptions<TKey> {
   /**
    * The data passed to the callable function.
    */
@@ -104,8 +100,9 @@ export interface CallableFunctionRequest<
  *   not by manually setting headers in `options`.
  */
 export interface RawHttpRequest<
+  TKey extends AuthKey,
   TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
-> extends CloudFunctionRequestBase<TData> {
+> extends CloudFunctionRequestBase<TKey, TData> {
   /**
    * Low-level request shaping options for `onRequest` handlers.
    * These are consumed by the mock HTTP layer to construct an Express-like `Request`.

@@ -1,11 +1,12 @@
 import { DecodedAppCheckToken } from 'firebase-admin/app-check';
+import { providerId } from './_internal/provider-id.js';
 import {
+  AuthProvider,
   DEFAULT_PROJECT_ID,
   DEFAULT_REGION,
   EPOCH_MINUTES_30,
   EPOCH_MINUTES_60,
-} from './_internal/constants.js';
-import { providerId } from './_internal/provider-id.js';
+} from './_internal/types.js';
 import {
   appId,
   cloneDeep,
@@ -21,14 +22,12 @@ import {
   AppCheckConstructor,
   AppCheckData,
   AuthContextOptions,
+  AuthenticatedRequestContext,
   AuthKey,
-  AuthProvider,
   FirebaseIdentities,
-  GenericAuthContext,
   IdentityConstructor,
   MockIdentity,
-  RequestContext,
-  RequestContextOptions,
+  UnauthenticatedRequestContext,
 } from './types.js';
 
 /**
@@ -206,25 +205,12 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
     return cloneDeep(this._ids.get(key));
   }
 
-  requestContext(options?: RequestContextOptions): RequestContext {
-    const context: RequestContext = {
-      projectId: this.projectId,
-    };
-    if (options?.appCheck !== false) {
-      context.app = this.appCheck(
-        options?.appCheck === true ? undefined : options?.appCheck
-      );
-    }
-
-    return context;
-  }
-
   /**
    * Build a **GenericAuthContext** for a registered key.
    *
    * @param key - Registry key.
    * @param options - Context overrides (timestamps, App Check, etc.). See {@link AuthContextOptions}.
-   * @returns A new {@link GenericAuthContext} with fresh time claims and (by default) an App Check token.
+   * @returns A new {@link AuthenticatedRequestContext} with fresh time claims and (by default) an App Check token.
    * @throws {Error} If no identity is registered for the given key.
    *
    * @remarks
@@ -235,23 +221,40 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    * - Set `suppressAppCheck: true` to omit the `app` field.
    * - All returned structures are deep-cloned and safe to mutate in tests.
    */
-  authContext(key: TKey, options?: AuthContextOptions): GenericAuthContext {
-    const id = this._ids.get(key);
-    if (id == undefined)
-      throw new Error(`No identity registered for the key "${key}".`);
+  authContext(
+    options?: AuthContextOptions<TKey>
+  ): UnauthenticatedRequestContext | AuthenticatedRequestContext {
+    let context: AuthenticatedRequestContext | UnauthenticatedRequestContext;
+    const key = options?.key;
+    if (key) {
+      const id = this._ids.get(key);
+      if (id == undefined)
+        throw new Error(`No identity registered for the key "${key}".`);
 
-    const iat = epochSeconds(options?.iat) ?? millisToSeconds(this._now());
-    const auth_time = epochSeconds(options?.authTime) ?? iat - EPOCH_MINUTES_30;
-    const exp = epochSeconds(options?.expires) ?? iat + EPOCH_MINUTES_30;
-    const identity: MockIdentity = cloneDeep(id);
+      const iat = epochSeconds(options?.iat) ?? millisToSeconds(this._now());
+      const auth_time =
+        epochSeconds(options?.authTime) ?? iat - EPOCH_MINUTES_30;
+      const exp = epochSeconds(options?.expires) ?? iat + EPOCH_MINUTES_30;
+      const identity: MockIdentity = cloneDeep(id);
 
-    const context: GenericAuthContext = {
-      ...this.requestContext(options),
-      auth_time,
-      exp,
-      iat,
-      identity,
-    };
+      context = {
+        projectId: this.projectId,
+        auth_time,
+        exp,
+        iat,
+        identity,
+      } as AuthenticatedRequestContext;
+    } else {
+      context = {
+        projectId: this.projectId,
+      } as UnauthenticatedRequestContext;
+    }
+
+    if (options?.appCheck !== false) {
+      context.app = this.appCheck(
+        options?.appCheck === true ? undefined : options?.appCheck
+      );
+    }
 
     return context;
   }
