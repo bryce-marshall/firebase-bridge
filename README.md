@@ -280,6 +280,7 @@ Tag each package individually:
 ```bash
 git tag -a firestore-admin-v0.0.1 -m "firestore-admin v0.0.1"
 git tag -a firestore-functions-v0.0.1 -m "firestore-functions v0.0.1"
+git tag -a auth-context-v0.0.1 -m "auth-context v0.0.1"
 git push --tags
 ```
 

@@ -9,6 +9,7 @@ const packedDir = resolve(consumer, '_packed');
 const pkgs = [
   { name: '@firebase-bridge/firestore-admin', path: resolve(root, 'packages/firestore-admin'), outFile: 'firestore-admin.tgz' },
   { name: '@firebase-bridge/firestore-functions', path: resolve(root, 'packages/firestore-functions'), outFile: 'firestore-functions.tgz' },
+  { name: '@firebase-bridge/auth-context', path: resolve(root, 'packages/auth-context'), outFile: 'auth-context.tgz' },
 ];
 
 function sh(cmd, cwd = root) {
@@ -43,6 +44,8 @@ function main() {
   // Only delete existing tarballs in _packed/ (keep the directory itself)
   cleanTgz(packedDir);
 
+  const tarballFilenames = pkgs.map((p) => p.outFile);
+
   // Pack each package directly into _packed/
   pkgs.map((p) => {
     const generated = packIntoPacked(p.path);
@@ -60,13 +63,12 @@ function main() {
   rmSync(resolve(consumer, 'node_modules'), { recursive: true, force: true });
   rmSync(resolve(consumer, 'package-lock.json'), { force: true });
 
+  const installCmd = 'npm i ' + tarballFilenames.map(filename => `./_packed/${filename}`).join(' ');
   // Point installs at local tarballs via npm aliases
   sh(
-    'npm i ./_packed/firestore-admin.tgz ./_packed/firestore-functions.tgz',
+    installCmd,
     consumer
   );
-
-  const tarballFilenames = ['firestore-admin.tgz', 'firestore-functions.tgz'];
 
   // Quick packaging sanity checks (best-effort)
   tarballFilenames.forEach((filename) => {

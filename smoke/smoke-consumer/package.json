@@ -16,6 +16,7 @@
     "clean": "rimraf node_modules package-lock.json"
   },
   "dependencies": {
+    "@firebase-bridge/auth-context": "file:_packed/auth-context.tgz",
     "@firebase-bridge/firestore-admin": "file:_packed/firestore-admin.tgz",
     "@firebase-bridge/firestore-functions": "file:_packed/firestore-functions.tgz"
   },

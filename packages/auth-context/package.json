@@ -10,7 +10,7 @@
   "types": "./dist/esm/index.d.ts",
   "scripts": {
     "clean": "rimraf dist",
-    "build": "nx build firestore-admin",
+    "build": "nx build auth-context",
     "build:esm": "nx run auth-context:build-esm",
     "build:cjs": "nx run auth-context:build-cjs",
     "prepublishOnly": "nx build auth-context && node ../../tools/prepare-publish.mjs",
@@ -44,9 +44,6 @@
     "google-gax": ">=4.3.3 <6"
   },
   "peerDependenciesMeta": {
-    "@google-cloud/firestore": {
-      "optional": false
-    },
     "google-gax": {
       "optional": false
     }
@@ -102,7 +99,8 @@
         },
         "outputs": [
           "{projectRoot}/dist/esm",
-          "{projectRoot}/dist/cjs"
+          "{projectRoot}/dist/cjs",
+          "{projectRoot}/dist/THIRD_PARTY_LICENSES"
         ]
       }
     }

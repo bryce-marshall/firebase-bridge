@@ -1,10 +1,17 @@
-import { mkdirSync, cpSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  cpSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+} from 'node:fs';
 import { resolve } from 'node:path';
 
 export function copyAssetsToDist(projectRoot) {
   const ROOT = resolve(projectRoot);
   const DIST = resolve(ROOT, 'dist');
   const ASSETS = resolve(ROOT, 'assets');
+  const THIRD_PARTY_DIR = resolve(ASSETS, 'THIRD_PARTY_LICENSES');
 
   // ensure folders
   mkdirSync(DIST, { recursive: true });
@@ -40,6 +47,13 @@ export function copyAssetsToDist(projectRoot) {
     } catch {
       // no-op if asset does not exist
     }
+  }
+
+  // 4) optional: copy assets/THIRD_PARTY_LICENSES -> dist/THIRD_PARTY_LICENSES
+  if (existsSync(THIRD_PARTY_DIR)) {
+    cpSync(THIRD_PARTY_DIR, resolve(DIST, 'THIRD_PARTY_LICENSES'), {
+      recursive: true,
+    });
   }
 }
 

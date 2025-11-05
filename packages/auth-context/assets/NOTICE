@@ -1,14 +1,12 @@
-@firebase-bridge/firestore-admin
+@firebase-bridge/auth-context
 
 Copyright (c) 2025 Bryce Marshall
-All rights reserved.
+Licensed under the Apache License, Version 2.0.
 
-This product includes portions of the Google Cloud Firestore Node.js client library
-(googleapis/nodejs-firestore), © 2017–2025 Google LLC, licensed under the Apache License, Version 2.0.
+This product includes adapted portions of the node-mocks-http library
+(https://www.npmjs.com/package/node-mocks-http), licensed under the MIT License.
 
 Adapted files / declarations:
-- src/lib/_internal/firestore/types.ts  → adapted TypeScript declarations (e.g., GapicClient interface)
-- src/lib/_internal/firestore/pool.ts   → adapted for internal use because the type is not exported by the Google package
-- src/lib/_internal/firestore/serializer.ts  → Typescript interface adaptation
+- src/lib/http/types.ts — MockHttpResponse type extends node-mocks-http MockResponse methods.
 
 Modifications © 2025 Bryce Marshall.
