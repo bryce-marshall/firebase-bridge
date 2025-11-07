@@ -1,4 +1,4 @@
-import { MockHttpRequest } from '../../lib/http/mock-http-request.js';
+import { MockHttpRequest } from '../../lib/http/_internal/mock-http-request.js';
 import {
   CloudFunctionsParsedBody,
   GenericMultiValueDictionary,

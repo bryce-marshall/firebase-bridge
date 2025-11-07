@@ -1,6 +1,6 @@
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import { onCall, onRequest } from 'firebase-functions/v2/https';
-import { RequestHandlerV2 } from '../../lib/https/https-v2-handler.js';
+import { RequestHandlerV2 } from '../../lib/https/v2-types.js';
 import { TestIdentity, TestManager } from '../_helpers/test-manager.js';
 
 const INPUT_VALUE = 1234567;

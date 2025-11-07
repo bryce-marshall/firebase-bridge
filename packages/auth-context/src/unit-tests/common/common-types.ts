@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
-import { MockHttpResponse } from '../../lib/http/mock-http-response';
-import { CloudFunctionsParsedBody } from '../../lib/http/types';
+import {
+  CloudFunctionsParsedBody,
+  MockHttpResponse,
+} from '../../lib/http/types';
 import { CallableFunctionRequest, RawHttpRequest } from '../../lib/https/types';
 import { AppCheckData, AuthData } from '../../lib/types';
 import { TestIdentity } from '../_helpers/test-manager';

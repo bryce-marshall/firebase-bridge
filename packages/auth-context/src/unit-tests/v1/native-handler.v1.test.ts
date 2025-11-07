@@ -1,5 +1,5 @@
 import { HttpsFunction, Runnable, runWith } from 'firebase-functions/v1';
-import { RequestHandlerV1 } from '../../lib/https/https-v1-handler.js';
+import { RequestHandlerV1 } from '../../lib/https/v1-types.js';
 import { TestIdentity, TestManager } from '../_helpers/test-manager.js';
 
 const INPUT_VALUE = 1234567;

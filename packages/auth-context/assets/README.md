@@ -10,23 +10,23 @@
 
 This package provides a realistic **in-memory invocation harness** for Firebase **HTTPS Cloud Functions**. It supports both **v1** (`firebase-functions/v1`) and **v2** (`firebase-functions/v2`) APIs, enabling deterministic local execution of callable (`onCall`) and request (`onRequest`) handlers.
 
-* Works with **real function handlers** — no stubbing or rewriting required.
-* Simulates **auth**, **App Check**, **instance ID**, and **request metadata**.
-* Provides configurable identity and contextual overrides.
-* Designed for **fast, side-effect-free tests** — no emulator or deployment loop.
+- Works with **real function handlers** — no stubbing or rewriting required.
+- Simulates **auth**, **App Check**, **instance ID**, and **request metadata**.
+- Provides configurable identity and contextual overrides.
+- Designed for **fast, side-effect-free tests** — no emulator or deployment loop.
 
 > **Important:** `@firebase-bridge/auth-context` mocks the **invocation context**, not the Cloud Functions SDK itself. Your handlers execute exactly as they would in production — the mock simply supplies realistic `Request`, `Response`, and context objects, allowing you to test business logic locally and deterministically.
 
 ### When to use it
 
-* Unit tests for Cloud Function handlers (`onCall`, `onRequest`).
-* CI environments where the **Functions Emulator** is unavailable or slow.
-* Deterministic handler testing with realistic auth & request data.
+- Unit tests for Cloud Function handlers (`onCall`, `onRequest`).
+- CI environments where the **Functions Emulator** is unavailable or slow.
+- Deterministic handler testing with realistic auth & request data.
 
 ### Companion Packages
 
-* For a high-fidelity **in-memory mock** for the **Firestore Admin SDK** purpose-built for fast, deterministic backend unit tests (no emulator boot, no deploy loop) use the companion package **[@firebase-bridge/firestore-admin](https://www.npmjs.com/package/@firebase-bridge/firestore-admin)**.
-* To bind firebase-functions (v1 & v2) Firestore triggers to an in-memory Firestore database use the companion package **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)**.
+- For a high-fidelity **in-memory mock** for the **Firestore Admin SDK** purpose-built for fast, deterministic backend unit tests (no emulator boot, no deploy loop) use the companion package **[@firebase-bridge/firestore-admin](https://www.npmjs.com/package/@firebase-bridge/firestore-admin)**.
+- To bind firebase-functions (v1 & v2) Firestore triggers to an in-memory Firestore database use the companion package **[@firebase-bridge/firestore-functions](https://www.npmjs.com/package/@firebase-bridge/firestore-functions)**.
 
 ---
 
@@ -82,6 +82,29 @@ auth.register('anon', {
 
 The manager exposes a symmetric surface for **v1** and **v2** via `auth.https.v1` and `auth.https.v2`. Both support `onCall(...)` and `onRequest(...)`.
 
+### v2 callable example
+
+```ts
+import { onCall } from 'firebase-functions/v2/https';
+import { AuthManager } from '@firebase-bridge/auth-context';
+
+const auth = new AuthManager();
+auth.register('bob', { signInProvider: 'google.com' });
+
+export const greet = onCall((req) => {
+  const name = req.data?.name ?? 'stranger';
+  return { message: `Hello, ${name}!`, appId: req.app?.appId ?? 'n/a' };
+});
+
+it('greets bob', async () => {
+  const res = await auth.https.v2.onCall(
+    { key: 'bob', data: { name: 'Bob' } },
+    greet
+  );
+  expect(res.message).toBe('Hello, Bob!');
+});
+```
+
 ### v1 callable example
 
 ```ts
@@ -108,32 +131,46 @@ it('adds numbers as alice', async () => {
 });
 ```
 
-### v2 callable example
+### Request-style handlers
+
+Request handlers receive a mock Express-like `Request` and a mock `Response` (from `node-mocks-http`). You can shape the request via `options`.
+
+### v2 request example
 
 ```ts
-import { runWith } from 'firebase-functions/v2';
+import { onRequest } from 'firebase-functions/v2/https';
 import { AuthManager } from '@firebase-bridge/auth-context';
 
 const auth = new AuthManager();
-auth.register('bob', { signInProvider: 'google.com' });
+auth.register('carol', { signInProvider: 'google.com' });
 
-export const greet = runWith({}).https.onCall((req) => {
-  const name = req.data?.name ?? 'stranger';
-  return { message: `Hello, ${name}!`, appId: req.app?.appId ?? 'n/a' };
+const hello = onRequest((req, res) => {
+  res.status(200).json({
+    method: req.method,
+    path: req.path,
+    uid: (req as any).auth?.uid ?? null,
+  });
 });
 
-it('greets bob', async () => {
-  const res = await auth.https.v2.onCall(
-    { key: 'bob', data: { name: 'Bob' } },
-    greet
+it('invokes request handler as carol', async () => {
+  const response = await auth.https.v1.onRequest(
+    {
+      key: 'carol',
+      options: {
+        method: 'GET',
+        path: '/hello',
+      },
+    },
+    hello
   );
-  expect(res.message).toBe('Hello, Bob!');
+
+  expect(response._getStatusCode()).toBe(200);
+  const body = response._getJSONData();
+  expect(body.uid).toMatch(/^uid_/);
 });
 ```
 
-### Request-style handlers (v1 or v2)
-
-Request handlers receive a mock Express-like `Request` and a mock `Response` (from `node-mocks-http`). You can shape the request via `options`.
+### v1 request example
 
 ```ts
 import { runWith } from 'firebase-functions/v1';
@@ -176,18 +213,18 @@ it('invokes request handler as carol', async () => {
 
 This is the entry point you’ll use in tests.
 
-* Holds defaults for project, region, and time.
-* Keeps a registry of **identities** keyed by string.
-* Knows how to build realistic **Firebase auth** and **App Check** data per invocation.
-* Produces **inspectable** mock HTTP responses.
+- Holds defaults for project, region, and time.
+- Keeps a registry of **identities** keyed by string.
+- Knows how to build realistic **Firebase auth** and **App Check** data per invocation.
+- Produces **inspectable** mock HTTP responses.
 
 **Key members (conceptual):**
 
-* `register(key, identity)` — define who “alice”, “bob”, etc. are.
-* `https.v1.onCall(request, handler)` — call a v1 callable handler with a mock context.
-* `https.v2.onCall(request, handler)` — call a v2 callable handler with a mock context.
-* `https.v1.onRequest(request, handler)` — call a v1 request handler with a mock `Request`/`Response`.
-* `https.v2.onRequest(request, handler)` — same for v2.
+- `register(key, identity)` — define who “alice”, “bob”, etc. are.
+- `https.v1.onCall(request, handler)` — call a v1 callable handler with a mock context.
+- `https.v2.onCall(request, handler)` — call a v2 callable handler with a mock context.
+- `https.v1.onRequest(request, handler)` — call a v1 request handler with a mock `Request`/`Response`.
+- `https.v2.onRequest(request, handler)` — same for v2.
 
 > The actual source exports additional request/identity types — those are there to let you describe the call more precisely (custom headers, custom timestamps, explicit App Check, etc.).
 
@@ -205,10 +242,10 @@ The manager can be constructed with an explicit `now()` so token timestamps, iss
 
 Most request descriptors in this package share a common shape:
 
-* **who** is calling (`key`)
-* **what** they’re sending (`data`)
-* **how** the HTTP request should look (for `onRequest`)
-* **how** tokens should be timestamped or constructed
+- **who** is calling (`key`)
+- **what** they’re sending (`data`)
+- **how** the HTTP request should look (for `onRequest`)
+- **how** tokens should be timestamped or constructed
 
 This is expressed via the exported request types (e.g. `CallableFunctionRequest`, `RawHttpRequest`) that you already have in your source. At test time, you pass a plain object with the relevant fields — the manager fills in the Firebase bits.
 
@@ -234,7 +271,7 @@ await auth.https.v2.onCall(
 ### Request overrides
 
 ```ts
-await auth.https.v1.onRequest(
+await auth.https.v2.onRequest(
   {
     key: 'alice',
     options: {
@@ -319,18 +356,18 @@ Now your `onRequest()`-backed APIs can call `MyApp.verifyIdToken(req)` and still
 
 ## Notes on fidelity
 
-* **Auth context** — realistic UID, provider data, claims, and timestamps.
-* **AppCheck** — synthesized automatically (configurable per-call and indirectly via `AuthManagerOptions`).
-* **Request/Response** — fully inspectable mocks from `node-mocks-http`.
-* **Headers & metadata** — follow Firebase conventions (`content-type`, `authorization`, `x-firebase-appcheck`).
+- **Auth context** — realistic UID, provider data, claims, and timestamps.
+- **AppCheck** — synthesized automatically (configurable per-call and indirectly via `AuthManagerOptions`).
+- **Request/Response** — fully inspectable mocks from `node-mocks-http`.
+- **Headers & metadata** — follow Firebase conventions (`content-type`, `authorization`, `x-firebase-appcheck`).
 
 ---
 
 ## Versioning & compatibility
 
-* Peer dependency: `firebase-functions` (v1/v2)
-* Node.js ≥ 18 required.
-* Works with both ESM and CJS TypeScript projects.
+- Peer dependency: `firebase-functions` (v1/v2)
+- Node.js ≥ 18 required.
+- Works with both ESM and CJS TypeScript projects.
 
 ---
 
@@ -338,9 +375,9 @@ Now your `onRequest()`-backed APIs can call `MyApp.verifyIdToken(req)` and still
 
 This project is in **minimal-maintainer mode**.
 
-* **Issues first.** Open an issue for fidelity or compatibility issues.
-* **PRs limited to:** bug fixes with tests, doc updates, or build hygiene.
-* **Fidelity priority:** any behavioral changes must remain consistent with Cloud Functions v1/v2 semantics.
+- **Issues first.** Open an issue for fidelity or compatibility issues.
+- **PRs limited to:** bug fixes with tests, doc updates, or build hygiene.
+- **Fidelity priority:** any behavioral changes must remain consistent with Cloud Functions v1/v2 semantics.
 
 ---
 
