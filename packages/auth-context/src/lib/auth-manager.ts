@@ -1,23 +1,39 @@
 import { DecodedAppCheckToken } from 'firebase-admin/app-check';
+import {
+  generateEmail,
+  generatePhoneNumber,
+  resolveSecondFactor,
+  validatedCustomClaims,
+} from './_internal/auth-helpers.js';
+import {
+  AuthInstance,
+  IMultiFactorInfo,
+  IPhoneMultiFactorInfo,
+  IUserMetadata,
+  PersistedUserInfo,
+} from './_internal/auth-types.js';
 import { providerId } from './_internal/provider-id.js';
 import {
   AuthProvider,
   DEFAULT_PROJECT_ID,
   DEFAULT_REGION,
+  EPOCH_DAY,
   EPOCH_MINUTES_30,
   EPOCH_MINUTES_60,
+  RemoveIndexSignature,
 } from './_internal/types.js';
 import {
   appId,
   cloneDeep,
   epochSeconds,
-  hexId,
   millisToSeconds,
   projectNumber,
   userId,
+  utcDate,
 } from './_internal/util.js';
-import { formatIss } from './https/_internal/util.js';
+import { Auth } from './auth.js';
 import { _HttpsBroker } from './https/_internal/https-broker.js';
+import { formatIss } from './https/_internal/util.js';
 import { HttpsBroker } from './https/types.js';
 import {
   AppCheckConstructor,
@@ -25,9 +41,10 @@ import {
   AuthContextOptions,
   AuthenticatedRequestContext,
   AuthKey,
-  FirebaseIdentities,
   IdentityConstructor,
+  IdentityOptions,
   MockIdentity,
+  PhoneMultiFactorContructor,
   UnauthenticatedRequestContext,
 } from './types.js';
 
@@ -89,19 +106,6 @@ export interface AuthManagerOptions {
    * Defaults to `'nam5'`.
    */
   region?: string;
-
-  /**
-   * Optional map of provider IDs to **stable** OAuth IDs to use in synthesized
-   * identities.
-   *
-   * @remarks
-   * - Keys should be Firebase provider IDs (e.g. `'google.com'`, `'apple.com'`),
-   *   but missing/empty values are normalized.
-   * - This is mainly for tests that assert on provider-specific UIDs in
-   *   `firebase.identities[...]`.
-   * - Once the manager is constructed this map is frozen.
-   */
-  oauthIds?: Record<string, string | undefined>;
 }
 
 /**
@@ -120,14 +124,10 @@ export interface AuthManagerOptions {
 export class AuthManager<TKey extends AuthKey = AuthKey>
   implements AuthProvider<TKey>
 {
-  private _ids = new Map<TKey, MockIdentity>();
+  private _defaults = new Map<TKey, AuthInstance>();
+  private _instances = new Map<string, AuthInstance>();
   private _now: () => number;
-
-  /**
-   * A set of consistent oauth ids for providers where tests require them, defined during
-   * construction. This collection is readonly (frozen).
-   */
-  readonly oauthIds: Record<string, string>;
+  private _epochSeconds: () => number;
 
   /**
    * Firebase App ID used for App Check tokens (`sub`, `app_id`).
@@ -163,25 +163,30 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
   readonly https: HttpsBroker<TKey>;
 
   /**
+   * Auth facade exposing a high-fidelity mock of the Admin SDK Auth API.
+   *
+   * @remarks
+   * Backed by the same internal `AuthInstance` map that powers context
+   * generation, so operations such as `updateUser` are reflected in future
+   * tokens and request contexts.
+   */
+  readonly auth: Auth;
+
+  /**
    * Create a new {@link AuthManager} with optional environment overrides.
    *
    * @param options - Optional initialization overrides. See {@link AuthManagerOptions}.
    */
   constructor(options?: AuthManagerOptions) {
     this._now = options?.now ?? (() => Date.now());
+    this._epochSeconds = () => millisToSeconds(this._now());
     this.projectNumber = options?.projectNumber ?? projectNumber();
     this.appId = options?.appId ?? appId(this.projectNumber);
     this.projectId = options?.projectId ?? DEFAULT_PROJECT_ID;
     this.region = options?.region ?? DEFAULT_REGION;
     this.iss = formatIss(this.projectNumber);
     this.https = new _HttpsBroker(this);
-    this.oauthIds = {};
-    if (options?.oauthIds) {
-      for (const [key, value] of Object.entries(options.oauthIds)) {
-        this.oauthIds[key] = value?.trim() ? value : providerId(key);
-      }
-    }
-    Object.freeze(this.oauthIds);
+    this.auth = new Auth(this._instances, this._now);
   }
 
   /**
@@ -194,18 +199,20 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    * @throws {Error} If the key has already been registered.
    *
    * @remarks
-   * - The identity is normalized via {@link AuthManager.mockIdentity}.
+   * - The identity is normalized via an internal {@link authInstance} helper.
    * - The stored template is immutable from the caller’s perspective; runtime
    *   methods return deep-cloned copies.
    */
   register(key: TKey, identity?: IdentityConstructor): string {
-    if (this._ids.has(key))
-      throw new Error(`Identity already registered for the key "${key}".`);
+    if (this._defaults.has(key))
+      throw new Error(identityError(key, 'Already registered'));
 
-    const result = this.mockIdentity(identity ?? {});
-    this._ids.set(key, result);
+    const ai = this.authInstance(identity ?? {});
+    this._defaults.set(key, ai);
+    // Clone the working instance because it is mutable
+    this._instances.set(ai.uid, cloneDeep(ai));
 
-    return result.uid;
+    return ai.uid;
   }
 
   /**
@@ -213,23 +220,19 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    *
    * @param key - Registry key to remove.
    * @returns `true` if the identity existed and was removed, otherwise `false`.
-   */
-  deregister(key: TKey): boolean {
-    return this._ids.delete(key);
-  }
-
-  /**
-   * Retrieve a deep-cloned identity template for a key, if registered.
-   *
-   * @param key - Registry key to look up.
-   * @returns A cloned {@link MockIdentity}, or `undefined` if not found.
    *
    * @remarks
-   * The returned object is safe to mutate in tests without affecting the
-   * underlying registry.
+   * This removes both the default template and its active instance, so any
+   * subsequent attempts to use `key` for a context will fail with an error.
    */
-  identity(key: TKey): MockIdentity | undefined {
-    return cloneDeep(this._ids.get(key));
+  deregister(key: TKey): boolean {
+    const value = this._defaults.get(key);
+    if (!value) return false;
+
+    this._defaults.delete(key);
+    this._instances.delete(value.uid);
+
+    return true;
   }
 
   /**
@@ -246,6 +249,9 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    *   - `iat` defaults to `now()`
    *   - `auth_time` defaults to `iat - 30m`
    *   - `exp` defaults to `iat + 30m`
+   *   - Multi-factor details are applied if configured via
+   *     {@link IdentityConstructor.multiFactorDefault} or
+   *     {@link IdentityOptions.multifactorSelector}.
    * - Unauthenticated case:
    *   - Only `projectId` and optional App Check are included.
    * - Set `appCheck: false` to omit App Check for this call.
@@ -256,15 +262,12 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
     let context: AuthenticatedRequestContext | UnauthenticatedRequestContext;
     const key = options?.key;
     if (key) {
-      const id = this._ids.get(key);
-      if (id == undefined)
-        throw new Error(`No identity registered for the key "${key}".`);
-
-      const iat = epochSeconds(options?.iat) ?? millisToSeconds(this._now());
-      const auth_time =
-        epochSeconds(options?.authTime) ?? iat - EPOCH_MINUTES_30;
-      const exp = epochSeconds(options?.expires) ?? iat + EPOCH_MINUTES_30;
-      const identity: MockIdentity = cloneDeep(id);
+      const identity = this.identity(key, options);
+      const iat = epochSeconds(options?.iat ?? this._epochSeconds());
+      const auth_time = epochSeconds(
+        options?.authTime ?? iat - EPOCH_MINUTES_30
+      );
+      const exp = epochSeconds(options?.expires ?? iat + EPOCH_MINUTES_30);
 
       context = {
         projectId: this.projectId,
@@ -286,6 +289,22 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
     }
 
     return context;
+  }
+
+  /**
+   * Reset mutable identity instances back to their registered defaults.
+   *
+   * @remarks
+   * - Clears the internal instance map and re-clones all registered defaults.
+   * - Does **not** remove registered identities; use {@link deregister} for that.
+   * - Useful between tests to discard mutations from Admin SDK calls
+   *   (`updateUser`, etc.) while keeping the registry intact.
+   */
+  reset(): void {
+    this._instances.clear();
+    for (const mock of this._defaults.values()) {
+      this._instances.set(mock.uid, cloneDeep(mock));
+    }
   }
 
   /**
@@ -311,9 +330,8 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
     token.aud = [this.projectNumber, this.projectId];
     token.iss = this.iss;
     // exp and iat may be overriden. Synthesize if not.
-    token.exp =
-      epochSeconds(c?.exp) ?? millisToSeconds(this._now()) + EPOCH_MINUTES_60;
-    token.iat = epochSeconds(c?.iat) ?? token.exp - EPOCH_MINUTES_60;
+    token.exp = epochSeconds(c?.exp ?? this._epochSeconds() + EPOCH_MINUTES_60);
+    token.iat = epochSeconds(c?.iat ?? token.exp - EPOCH_MINUTES_60);
     // All other arbitrary values were cloned from the AppCheckConstructor
 
     const r: AppCheckData = {
@@ -327,151 +345,284 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
 
     return r;
   }
+
   /**
-   * Normalize an {@link IdentityConstructor} into a stable {@link MockIdentity}
-   * suitable for registry storage.
+   * Resolve a normalized {@link MockIdentity} for the given registry key.
    *
-   * @param ic - Constructor containing partial profile/provider details.
-   * @returns A fully normalized {@link MockIdentity}.
+   * @param key - Registry key for the identity.
+   * @param options - Optional provider and multi-factor selection overrides.
+   * @returns A {@link MockIdentity} suitable for embedding into a request context.
+   *
+   * @throws {Error} If the key is not registered, the backing instance is
+   *         missing, or the identity is disabled.
    *
    * @remarks
-   * - Ensures `iss`, `uid`, and `firebase` blocks are present.
-   * - Ensures a canonical sign-in provider is set (using
-   *   {@link defaultProvider} logic).
-   * - Applies extra arbitrary claims supplied via `ic.claims`.
+   * - Applies provider-derived identities (email/phone) into the
+   *   `firebase.identities` bag.
+   * - Chooses a default `sign_in_provider` when `options.signInProvider`
+   *   is not supplied (first non-anonymous provider or `'anonymous'`).
+   * - Applies multi-factor details based on {@link IdentityOptions.multifactorSelector}.
+   * - Copies validated custom claims from the underlying `AuthInstance`.
    */
-  protected mockIdentity(ic: IdentityConstructor): MockIdentity {
-    const id: MockIdentity = cloneDeep(ic) as MockIdentity;
-    const claims = (id as IdentityConstructor).claims;
-    delete (id as IdentityConstructor).claims;
-    delete (id as IdentityConstructor).signInProvider;
+  identity(key: TKey, options?: IdentityOptions): MockIdentity {
+    const uid = this._defaults.get(key)?.uid;
 
-    id.iss = id.iss ?? this.iss;
-    id.uid = ic.uid ?? userId();
-    const fb: FirebaseIdentities = id.firebase ?? {};
-    if (!fb.identities) {
-      fb.identities = {};
+    if (uid == undefined) throw new Error(identityError(key, 'Not registered'));
+
+    const ai = this._instances.get(uid);
+    if (ai == undefined)
+      throw new Error(authInstanceError(key, uid, `has been deleted`));
+
+    if (ai.disabled)
+      throw new Error(authInstanceError(key, uid, `is disabled`));
+
+    const identities: Record<string, string[]> = {};
+
+    function appendIdentity(key: string, value: string | undefined): void {
+      if (!value) return;
+      const array = identities[key];
+      if (array) {
+        array.push(value);
+      } else {
+        identities[key] = [value];
+      }
+    }
+    let signInProvider = options?.signInProvider;
+
+    for (const ui of Object.values(ai.userInfo)) {
+      if (!signInProvider) {
+        signInProvider = ui.providerId;
+      }
+      if (ui.providerId !== 'anonymous') {
+        appendIdentity(ui.providerId, ui.uid);
+        appendIdentity('email', ui.email);
+        appendIdentity('phone', ui.phoneNumber);
+      }
     }
 
-    id.firebase = fb;
-    if (fb.sign_in_second_factor && !fb.second_factor_identifier) {
-      fb.second_factor_identifier = userId();
+    if (!signInProvider) {
+      signInProvider = 'anonymous';
+    }
+    const isAnonymous = signInProvider === 'anonymous';
+
+    const id: RemoveIndexSignature<MockIdentity> = {
+      uid,
+      iss: this.iss,
+      firebase: {
+        sign_in_provider: signInProvider,
+        identities,
+      },
+    };
+
+    if (!isAnonymous) {
+      const mfa = resolveSecondFactor(ai, options?.multifactorSelector);
+      if (mfa) {
+        id.firebase.sign_in_second_factor = mfa.factorId;
+        id.firebase.second_factor_identifier = mfa.uid;
+      }
     }
 
-    defaultProvider(id, ic, this.oauthIds);
+    if (ai.tenantId) {
+      id.firebase.tenant = ai.tenantId;
+    }
+    if (!isAnonymous) {
+      assignIf(id, 'email', ai.email);
+      assignIf(id, 'email_verified', ai.emailVerified);
+      assignIf(id, 'phone_number', ai.phoneNumber);
+    }
+    assignIf(id, 'photo_url', ai.photoURL);
+    assignIf(id, 'name', ai.displayName);
 
-    if (claims) {
+    if (ai.claims) {
+      const claims = cloneDeep(ai.claims);
       for (const [key, value] of Object.entries(claims)) {
-        id[key] = value;
+        (id as MockIdentity)[key] = value;
       }
     }
 
     return id;
   }
+
+  private authInstance(c: IdentityConstructor): AuthInstance {
+    const userMeta = (): IUserMetadata => {
+      const meta = c.metadata;
+      const creationTime = epochSeconds(
+        meta?.creationTime ?? this._epochSeconds() - EPOCH_DAY
+      );
+
+      const neverSignedIn = meta?.lastRefreshTime === null;
+
+      let lastSignInTime = neverSignedIn
+        ? creationTime
+        : epochSeconds(meta?.lastSignInTime ?? creationTime);
+
+      if (lastSignInTime < creationTime) {
+        lastSignInTime = creationTime;
+      }
+
+      let lastRefreshTime = neverSignedIn
+        ? null
+        : epochSeconds(meta?.lastRefreshTime ?? lastSignInTime);
+      if (lastRefreshTime && lastRefreshTime < lastSignInTime) {
+        lastRefreshTime = lastSignInTime;
+      }
+
+      return {
+        creationTime: utcDate(creationTime),
+        lastSignInTime: utcDate(lastSignInTime),
+        lastRefreshTime: lastRefreshTime ? utcDate(lastRefreshTime) : null,
+      };
+    };
+    const uid = c.uid ?? userId();
+    const userInfo: Record<string, PersistedUserInfo> = {};
+
+    const instance: AuthInstance = {
+      uid,
+      disabled: !!c.disabled,
+      userInfo,
+      metadata: userMeta(),
+    };
+
+    function applyUserInfo(ui: PersistedUserInfo): void {
+      if (!c.suppressProviderDefaults) {
+        assignDefer(instance, 'displayName', ui.displayName);
+        assignDefer(instance, 'email', ui.email);
+        assignDefer(instance, 'phoneNumber', ui.phoneNumber);
+        assignDefer(instance, 'photoURL', ui.photoURL);
+      }
+    }
+
+    if (c.customClaims) {
+      instance.claims = validatedCustomClaims(c.customClaims);
+    }
+
+    assignIf(instance, 'multiFactorDefault', c.multiFactorDefault);
+    if (c.multiFactorEnrollments) {
+      const enrolements = ensureArray(c.multiFactorEnrollments);
+      for (const mfe of enrolements) {
+        if (!mfe) continue;
+
+        const mfi: IMultiFactorInfo = {
+          factorId: mfe.factorId,
+          uid: mfe.uid ?? userId(),
+        };
+        if (mfi.factorId === 'phone') {
+          assignIf(
+            mfi as IPhoneMultiFactorInfo,
+            'phoneNumber',
+            (mfe as PhoneMultiFactorContructor).phoneNumber
+          );
+        }
+        assignIf(mfi, 'displayName', mfe.displayName);
+        assignIf(
+          mfi,
+          'enrollmentTime',
+          mfe.enrollmentTime ? utcDate(mfe.enrollmentTime) : undefined
+        );
+        (instance.multiFactorInfo ?? (instance.multiFactorInfo = [])).push(mfi);
+      }
+    }
+
+    if (c.providers) {
+      const providers = ensureArray(c.providers);
+      for (const p of providers) {
+        if (!p) continue;
+
+        const data = p.data;
+        const ui: PersistedUserInfo = {
+          uid: data?.uid ?? providerId(p.type),
+          providerId: p.signInProvider,
+        };
+        userInfo[ui.providerId] = ui;
+        let hasId = false;
+        if (data) {
+          hasId = assignIf(ui, 'email', data.email) || hasId;
+          hasId = assignIf(ui, 'phoneNumber', data.phoneNumber) || hasId;
+          assignIf(ui, 'displayName', data?.displayName);
+          assignIf(ui, 'photoURL', data.photoURL);
+        }
+        // Unless suppressed, assign provider-derived defaults on a first-in basis.
+        // We do this here to avoid capturing any generated phone/email values so that
+        // subsequent explicit provider values can be assigned instead.
+        if (!c.suppressProviderDefaults) {
+          applyUserInfo(ui);
+        }
+        // Assign generated phone/email after applyUserInfo()
+        if (!hasId) {
+          switch (p.type) {
+            case 'anonymous':
+              break;
+
+            case 'phone':
+              ui.phoneNumber = generatePhoneNumber();
+              break;
+
+            default:
+              ui.email = generateEmail();
+              break;
+          }
+        }
+      }
+      // Unless suppressed, assign provider-derived defaults on a first-in basis.
+      // This iteration will capture any generated phone/email values.
+      if (!c.suppressProviderDefaults) {
+        for (const ui of Object.values(instance.userInfo)) {
+          applyUserInfo(ui);
+        }
+      }
+    }
+
+    // Explicit identity values override implicit provider values.
+    assignIf(instance, 'displayName', c.displayName);
+    assignIf(instance, 'email', c.email);
+    assignIf(instance, 'emailVerified', c.emailVerified ?? false);
+    assignIf(instance, 'phoneNumber', c.phoneNumber);
+    assignIf(instance, 'photoURL', c.photoURL);
+    assignIf(instance, 'tenantId', c.tenantId);
+
+    return instance;
+  }
 }
 
 /**
- * Internal helper to apply canonical provider defaults to a mock identity.
- *
- * @param id - The identity being normalized.
- * @param ic - The original constructor (may contain preferred provider).
- * @param oauth - Preconfigured stable OAuth IDs.
- *
- * @remarks
- * This function:
- * - Normalizes friendly provider aliases (e.g. `'google'`) to
- *   canonical IDs (e.g. `'google.com'`),
- * - Ensures the corresponding `firebase.identities[...]` bucket exists,
- * - Optionally attaches an email/phone identity where appropriate,
- * - And leaves `"custom"` / `"anonymous"` mostly untouched.
+ * Assigns the `value` to `target` if value is defined and not an empty string and the target property
+ * is not already defined.
  */
-function defaultProvider(
-  id: MockIdentity,
-  ic: IdentityConstructor,
-  oauth: Record<string, string>
-): void {
-  // If caller pre-set firebase.sign_in_provider and no override requested, respect it.
-  if (ic.firebase?.sign_in_provider && ic.signInProvider == undefined) return;
-
-  // Normalize to canonical provider IDs expected in tokens.
-  const wanted = ic.signInProvider ?? 'anonymous';
-
-  const normalize = (p: string): string => {
-    switch (p) {
-      case 'google':
-        return 'google.com';
-      case 'apple':
-        return 'apple.com';
-      case 'microsoft':
-        return 'microsoft.com';
-      case 'twitter':
-        return 'twitter.com'; // not "x.com"
-      case 'github':
-        return 'github.com';
-      case 'facebook':
-        return 'facebook.com';
-      case 'yahoo':
-        return 'yahoo.com';
-      case 'playgames':
-        return 'playgames.google.com';
-      case 'gamecenter':
-        return 'gc.apple.com';
-      case 'password':
-      case 'phone':
-      case 'anonymous':
-      case 'custom':
-        return p;
-      default:
-        // fall back to raw if caller passed an already-canonical ID (e.g., "oidc.foo")
-        return p;
-    }
-  };
-
-  const provId = normalize(wanted);
-  id.firebase.sign_in_provider = provId;
-
-  // Helper to ensure an identities bucket exists and push a unique value.
-  const pushIdentity = (key: string, value: string | undefined) => {
-    if (!value) return;
-    const arr = (id.firebase.identities[key] ??= []);
-    if (!arr.includes(value)) arr.push(value);
-  };
-
-  // For email convenience (used by "password" and as optional extra for OAuth)
-  const emailOrDefault = (domain: string) =>
-    id.email ?? `user-${hexId(6)}@${domain}`;
-
-  // For OAuth providers, we need a stable provider-specific UID (opaque).
-  // Use existing id.providerUid map if you have one; otherwise synthesize.
-  const providerUid = (prov: string) =>
-    id.firebase.identities[prov]?.[0] ?? oauth[prov] ?? providerId(wanted);
-
-  switch (provId) {
-    case 'password': {
-      // identities.email -> email
-      pushIdentity('email', emailOrDefault('example.com'));
-      break;
-    }
-
-    case 'phone': {
-      // identities.phone -> E.164 number
-      const phone = id.phone_number ?? '+15551234567';
-      pushIdentity('phone', phone);
-      break;
-    }
-
-    case 'anonymous':
-    case 'custom': {
-      // Typically no identities entries for these.
-      break;
-    }
-
-    default: {
-      // OAuth providers (google.com, apple.com, microsoft.com, twitter.com, etc.)
-      pushIdentity(provId, providerUid(provId));
-      // Add the email if it exists
-      if (id.email) pushIdentity('email', id.email);
-      break;
-    }
+function assignDefer<T extends object, K extends keyof T>(
+  target: T,
+  key: K,
+  value: T[K] | undefined
+) {
+  const existing = target[key];
+  if (existing == undefined || existing === '') {
+    assignIf(target, key, value);
   }
+}
+
+/**
+ * Assigns the `value` to `target` if value is defined and not an empty string.
+ *
+ * @returns `true` if the assignment occurred; otherwise `false`.
+ */
+function assignIf<T extends object, K extends keyof T>(
+  target: T,
+  key: K,
+  value: T[K] | undefined | null
+): boolean {
+  if (value == undefined || value === '') return false;
+  target[key] = value;
+
+  return true;
+}
+
+function identityError(key: AuthKey, msg: string): string {
+  return `Identity error for key "${key}". ${msg}.`;
+}
+
+function authInstanceError(key: AuthKey, uid: string, msg: string): string {
+  return identityError(key, `Identity with uid ${uid} ${msg}.`);
+}
+
+function ensureArray<T>(input: T | T[]): T[] {
+  return Array.isArray(input) ? input : [input];
 }

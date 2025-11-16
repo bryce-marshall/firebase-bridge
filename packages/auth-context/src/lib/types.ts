@@ -1,6 +1,8 @@
 import { DecodedAppCheckToken } from 'firebase-admin/app-check';
 import { DecodedIdToken } from 'firebase-admin/auth';
-import { Undefinedify } from './_internal/util.js';
+import { Undefinedify } from './_internal/types.js';
+
+export type AuthDateConstructor = Date | number | string;
 
 /**
  * Authentication provider metadata embedded inside ID tokens under the
@@ -8,11 +10,24 @@ import { Undefinedify } from './_internal/util.js';
  *
  * @remarks
  * Mirrors common fields exposed by Firebase Authentication and Identity Platform.
+ * This structure is attached to {@link MockIdentity.firebase}.
  */
 export interface FirebaseIdentities {
   /**
    * Provider-specific identity details keyed by provider.
-   * Example: `{ "email": ["alice@gmail.com"], "google.com": ["24I2SUdn5m4ox716tbiH6MML7jv6"] }`
+   *
+   * @remarks
+   * Keys are provider IDs such as `"email"`, `"phone"`, `"google.com"`,
+   * `"github.com"`, etc. Values are arrays of provider-specific identifiers
+   * (for example, provider UIDs or email addresses).
+   *
+   * @example
+   * ```ts
+   * {
+   *   "email": ["alice@gmail.com"],
+   *   "google.com": ["24I2SUdn5m4ox716tbiH6MML7jv6"]
+   * }
+   * ```
    */
   identities: Record<string, string[]>;
 
@@ -20,20 +35,40 @@ export interface FirebaseIdentities {
    * The ID of the provider used to sign in the user.
    *
    * @remarks
-   * Examples: `"anonymous"`, `"password"`, `"facebook.com"`, `"github.com"`,
-   * `"google.com"`, `"twitter.com"`, `"apple.com"`, `"microsoft.com"`,
-   * `"yahoo.com"`, `"phone"`, `"playgames.google.com"`, `"gc.apple.com"`, `"custom"`.
-   * Identity Platform may include `"linkedin.com"`, SAML (`"saml.*"`) and OIDC (`"oidc.*"`) providers.
+   * Examples:
+   * - `"anonymous"`
+   * - `"password"`
+   * - `"phone"`
+   * - `"facebook.com"`
+   * - `"github.com"`
+   * - `"google.com"`
+   * - `"twitter.com"`
+   * - `"apple.com"`
+   * - `"microsoft.com"`
+   * - `"yahoo.com"`
+   * - `"playgames.google.com"`
+   * - `"gc.apple.com"`
+   * - `"custom"` (for custom-token sign-ins).
+   *
+   * Identity Platform may additionally include `"linkedin.com"`, SAML
+   * providers (`"saml.*"`) and OIDC providers (`"oidc.*"`).
    */
   sign_in_provider: string;
 
   /**
-   * The second-factor type (e.g., `"phone"`) when the user is multi-factor authenticated.
+   * The second-factor type when the user is multi-factor authenticated.
+   *
+   * @remarks
+   * Typically `"phone"` for SMS second factors or `"totp"` for TOTP factors.
    */
   sign_in_second_factor?: string;
 
   /**
    * The `uid` of the second factor used to sign in.
+   *
+   * @remarks
+   * Mirrors the MFA enrollment identifier for the factor that satisfied
+   * the second-factor challenge.
    */
   second_factor_identifier?: string;
 
@@ -42,18 +77,29 @@ export interface FirebaseIdentities {
    */
   tenant?: string;
 
-  /** Additional provider-specific fields (extensible). */
+  /**
+   * Additional provider-specific fields (extensible).
+   *
+   * @remarks
+   * This allows the mock to attach extra Firebase/Identity-Platform-specific
+   * values if needed without changing the core interface.
+   */
   [key: string]: unknown;
 }
 
 /**
- * Static identity template registered with an auth provider (e.g., `AuthManager`).
+ * The identity template constructed for an authentication context.
  *
  * @remarks
- * This is not a raw JWT; rather, it represents the claims & profile that will be used
- * to construct `DecodedIdToken`/`AuthData` for requests.
+ * This is **not** a raw JWT; rather, it represents the claims and profile that
+ * will be used to construct `DecodedIdToken`/`AuthData` for requests.
+ *
+ * Instances of this type are produced by {@link AuthManager.identity} and
+ * embedded into the request context as part of {@link RequestIdentityPart}.
  */
 export interface MockIdentity {
+  /** User display name, if available. */
+  name?: string;
   /** User email, if available. */
   email?: string;
 
@@ -66,10 +112,12 @@ export interface MockIdentity {
   firebase: FirebaseIdentities;
 
   /**
-   * Issuer of the token (e.g., `https://securetoken.google.com/<PROJECT_NUMBER>`).
+   * Issuer of the token (for example, `https://securetoken.google.com/<PROJECT_NUMBER>`).
    *
    * @remarks
-   * Typically matches the project associated with the `aud` claim.
+   * Typically matches the project associated with the `aud` claim. For identities
+   * synthesized by {@link AuthManager}, this is derived from the manager’s
+   * configured project number.
    */
   iss: string;
 
@@ -77,63 +125,40 @@ export interface MockIdentity {
   phone_number?: string;
 
   /** Photo URL, if available. */
-  picture?: string;
+  photo_url?: string;
 
   /**
    * The user’s UID (convenience mirror of the `sub` claim).
    *
    * @remarks
-   * This is not literally present in raw JWT claims; it is provided as a convenience
-   * and should mirror `sub`.
+   * This property is not literally present in raw JWT claims in production;
+   * it is provided as a convenience and should mirror the `sub` claim value.
    */
   uid: string;
 
-  /** Additional arbitrary claims or profile fields. */
+  /**
+   * Additional arbitrary claims or profile fields.
+   *
+   * @remarks
+   * Custom claims added via {@link IdentityConstructor.customClaims} are
+   * materialized here so tests can model tenant/role/domain-specific data.
+   */
   [key: string]: unknown;
 }
-
-/**
- * Remove index signatures from a type so named properties remain visible and strongly typed.
- *
- * @remarks
- * Interfaces with index signatures (e.g., `[key: string]: unknown`) can cause mapped types
- * (`Partial<T>`, `Omit<T, K>`) to degrade IntelliSense for explicit properties. This utility
- * filters out index signatures, preserving declared keys.
- *
- * @typeParam T - The source type from which to strip index signatures.
- *
- * @example
- * ```ts
- * // Without stripping, IntelliSense may hide named props due to `[key: string]: unknown`.
- * type Clean = Partial<StripIndexSignature<Omit<MockIdentity, 'firebase'>>>;
- * ```
- */
-type StripIndexSignature<T> = {
-  [K in keyof T as K extends string
-    ? string extends K
-      ? never
-      : K
-    : K extends number
-    ? number extends K
-      ? never
-      : K
-    : K extends symbol
-    ? symbol extends K
-      ? never
-      : K
-    : never]: T[K];
-};
 
 /**
  * Canonical shortcut names for sign-in providers that the mock can synthesize.
  *
  * @remarks
+ * These are mapped to actual provider IDs (for example, `'google'`
+ * → `"google.com"`) by {@link SignInProvider}.
+ *
  * - `'custom'` → use when you want the identity to represent a custom-token
  *   sign-in (i.e. not backed by a first-party provider).
  * - `'anonymous'` → use when you want an anonymous sign-in with no provider
  *   identities attached.
  */
-export type AutoProvider =
+export type SignInProviderType =
   | 'google'
   | 'microsoft'
   | 'apple'
@@ -149,40 +174,188 @@ export type AutoProvider =
   | 'anonymous';
 
 /**
- * Lightweight constructor type for registering identities.
+ * Supported multi-factor provider identifiers.
  *
  * @remarks
- * This is deliberately more permissive than {@link MockIdentity}:
- *
- * - You can provide any subset of the explicit `MockIdentity` properties
- *   **except** the `firebase` block (that stays normalized by the provider).
- * - You may provide a **partial** {@link FirebaseIdentities} in `firebase`,
- *   which will be completed/normalized (for example, sign-in provider,
- *   identities bucket) by the auth provider.
- * - You may provide arbitrary additional claims via `claims`; these are
- *   merged onto the resulting {@link MockIdentity} so tests can emulate
- *   custom claims / multi-tenant / role flags.
+ * These correspond to the `factorId` used for MFA enrollments and sign-in.
  */
-export interface IdentityConstructor
-  extends Partial<Omit<StripIndexSignature<MockIdentity>, 'firebase'>> {
-  /**
-   * Partial `firebase` provider metadata; any missing fields are filled by
-   * the provider (for example, inferred `sign_in_provider` and per-provider
-   * identity buckets).
-   */
-  firebase?: Partial<FirebaseIdentities>;
+export type MultiFactorIdentifier = 'phone' | 'totp';
 
+/**
+ * Lightweight constructor shape for multi-factor information.
+ *
+ * @remarks
+ * This mirrors the core fields required to build an `IMultiFactorInfo`
+ * in the backing `AuthInstance`.
+ */
+export interface MultiFactorConstructor {
   /**
-   * The sign-in provider to synthesize if one is not already present in
-   * `firebase.sign_in_provider`.
+   * The type identifier of the second factor.
    *
    * @remarks
-   * This accepts simplified aliases (e.g. `'google'`, `'apple'`) which are
-   * later normalized to canonical Firebase provider IDs (e.g. `'google.com'`).
-   * Defaults to `'password'` for convenience if neither this nor a
-   * provider-id in `firebase` is supplied.
+   * - For SMS second factors, this is `'phone'`.
+   * - For TOTP second factors, this is `'totp'`.
    */
-  signInProvider?: AutoProvider;
+  factorId: MultiFactorIdentifier;
+
+  /**
+   * The ID of the enrolled second factor.
+   *
+   * @remarks
+   * This ID is unique to the user. If omitted, a synthetic ID is generated.
+   */
+  uid?: string;
+
+  /**
+   * The optional display name of the enrolled second factor.
+   */
+  displayName?: string;
+
+  /**
+   * The date the second factor was enrolled.
+   *
+   * @remarks
+   * Accepts a `Date` instance, seconds from the Unix epoch, or a UTC string.
+   * Values are normalized internally to a `Date`.
+   */
+  enrollmentTime?: AuthDateConstructor;
+}
+
+/**
+ * Multi-factor constructor shape specific to phone (SMS) factors.
+ *
+ * @remarks
+ * Extends {@link MultiFactorConstructor} with an optional `phoneNumber`.
+ */
+export interface PhoneMultiFactorContructor extends MultiFactorConstructor {
+  factorId: 'phone';
+
+  /**
+   * The phone number associated with the SMS second factor, if known.
+   */
+  phoneNumber?: string;
+}
+
+/**
+ * Minimal user profile properties used when synthesizing providers or identities.
+ *
+ * @remarks
+ * These fields align with the core `UserRecord` properties in the Admin SDK.
+ */
+export interface UserConstructor {
+  /**
+   * The user identifier.
+   *
+   * @remarks
+   * If not specified, a Firebase-style UID is auto-generated.
+   */
+  uid?: string;
+
+  /**
+   * The user display name.
+   */
+  displayName?: string;
+
+  /**
+   * The user email.
+   */
+  email?: string;
+
+  /**
+   * The user phone number.
+   */
+  phoneNumber?: string;
+
+  /**
+   * The user photo URL.
+   */
+  photoURL?: string;
+}
+
+export interface MetadataConstructor {
+  /**
+   * The date the user was created, formatted as a UTC string.
+   */
+  creationTime?: AuthDateConstructor;
+  /**
+   * The date the user last signed in, formatted as a UTC string.
+   */
+  lastSignInTime?: AuthDateConstructor;
+  /**
+   * The time at which the user was last active (ID token refreshed),
+   * formatted as a UTC Date string (eg 'Sat, 03 Feb 2001 04:05:06 GMT').
+   * Returns null if the user was never active.
+   */
+  lastRefreshTime?: AuthDateConstructor | null;
+}
+
+/**
+ * Lightweight constructor type for registering identities with {@link AuthManager}.
+ *
+ * @remarks
+ * This describes the minimal input needed to synthesize a rich `AuthInstance`
+ * used to back tokens and request contexts.
+ */
+export interface IdentityConstructor extends UserConstructor {
+  /**
+   * Whether the identity is disabled.
+   *
+   * @remarks
+   * Disabled identities cannot be used to generate authenticated contexts and
+   * will cause {@link AuthManager.identity} to throw.
+   */
+  disabled?: boolean;
+
+  metadata?: MetadataConstructor;
+
+  /**
+   * Whether the user’s email is verified.
+   */
+  emailVerified?: boolean;
+
+  /**
+   * Tenant ID associated with this identity.
+   *
+   * @remarks
+   * This is surfaced via `firebase.tenant` on {@link MockIdentity}.
+   */
+  tenantId?: string;
+
+  /**
+   * One or more sign-in providers associated with the identity.
+   *
+   * @remarks
+   * Values are created using {@link SignInProvider} helpers. Provider metadata
+   * is used to populate identity defaults (email, phone, etc.) unless
+   * {@link suppressProviderDefaults} is set.
+   */
+  providers?: SignInProvider[] | SignInProvider;
+
+  /**
+   * Multi-factor enrollments attached to this identity.
+   *
+   * @remarks
+   * Each entry corresponds to an MFA enrollment; these can later be selected
+   * via {@link IdentityOptions.multifactorSelector}.
+   */
+  multiFactorEnrollments?: MultiFactorConstructor | MultiFactorConstructor[];
+
+  /**
+   * If specified, will automatically apply multi-factor authentication to
+   * contexts generated for this identity, using the first multi-factor
+   * enrollment of the specified type (or matching selector).
+   */
+  multiFactorDefault?: MultiFactorIdentifier | MultiFactorSelector;
+
+  /**
+   * If `true`, will not automatically populate the generated `AuthInstance`
+   * with sign-in provider data specified in {@link providers}. Defaults to `false`.
+   *
+   * @remarks
+   * Use this when you want full manual control over the identity fields
+   * without provider-derived defaults.
+   */
+  suppressProviderDefaults?: boolean;
 
   /**
    * Additional arbitrary claims to materialize on the final identity.
@@ -190,45 +363,53 @@ export interface IdentityConstructor
    * @remarks
    * These are copied onto the resulting {@link MockIdentity} after
    * normalization so you can model custom/tenant/role claims in tests.
+   * Validation is performed by the internal `validatedCustomClaims` helper.
    */
-  claims?: Record<string, unknown>;
+  customClaims?: Record<string, unknown>;
 }
 
 /**
  * Constructor shape for building an App Check token in tests.
  *
  * @remarks
- * Missing fields are defaulted by the provider (e.g., `AuthManager.appCheck()`).
+ * Missing fields are defaulted by the provider (for example, `AuthManager.appCheck()`).
+ * Arbitrary additional properties are preserved and surfaced in the decoded token.
  */
 export interface AppCheckConstructor {
   /**
    * Expiration time (seconds since Unix epoch, or `Date`).
    */
-  exp?: Date | number;
+  exp?: AuthDateConstructor;
 
   /**
    * Issued-at time (seconds since Unix epoch, or `Date`).
    */
-  iat?: Date | number;
+  iat?: AuthDateConstructor;
 
   /**
    * Indicates whether this token was already consumed. Defaults to `false`.
    *
    * @remarks
-   * If this is the first time {@link AppCheck.verifyToken} has seen this token,
-   * this flag is `false` and the service will mark it as consumed for future calls.
-   * If `true`, the caller is attempting to reuse a previously consumed token.
-   * Consider taking additional precautions (rejecting the request, extra checks, etc.).
+   * If this is the first time the mock verifies this token, this flag is
+   * interpreted as `false` and the token is treated as fresh. When `true`,
+   * the caller is attempting to reuse a previously consumed token; tests
+   * can assert on this via {@link AppCheckData.alreadyConsumed}.
    */
   alreadyConsumed?: boolean;
 
-  /** Additional arbitrary properties (extensible). */
+  /**
+   * Additional arbitrary properties (extensible).
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
 
 /**
  * The App Check data exposed to callable handlers in v1/v2.
+ *
+ * @remarks
+ * This mirrors the structure that Firebase Functions exposes in
+ * `context.app` / `request.app` when App Check is enabled.
  */
 export interface AppCheckData {
   /**
@@ -378,12 +559,69 @@ export interface AuthData {
 }
 
 /**
+ * Selector for a specific multi-factor enrollment.
+ *
+ * @remarks
+ * Used from {@link IdentityConstructor.multiFactorDefault} and
+ * {@link IdentityOptions.multifactorSelector} to choose which enrollment
+ * should be applied to a given context.
+ */
+export interface MultiFactorSelector {
+  /**
+   * The type identifier of the second factor.
+   *
+   * @remarks
+   * - For SMS second factors, this is `'phone'`.
+   * - For TOTP second factors, this is `'totp'`.
+   */
+  factorId?: MultiFactorIdentifier;
+
+  /**
+   * The ID of the enrolled second factor. This ID is unique to the user.
+   */
+  uid?: string;
+}
+
+/**
  * Key type used to select a registered identity.
  *
  * @remarks
  * Often a string literal or enum value in tests; numbers are also supported.
  */
 export type AuthKey = string | number;
+
+/**
+ * Per-call options relating to provider selection and multi-factor behavior.
+ *
+ * @remarks
+ * These options are used both when constructing new identities and when
+ * generating request contexts via {@link AuthManager.context}.
+ */
+export interface IdentityOptions {
+  /**
+   * The sign-in provider to use.
+   *
+   * @remarks
+   * If not specified, defaults to the first `providerId` discovered in the
+   * underlying `AuthInstance` or `'anonymous'` if none are defined.
+   *
+   * Values should generally correspond to the provider IDs encoded in
+   * {@link FirebaseIdentities.sign_in_provider}, such as `"google.com"`,
+   * `"password"`, `"phone"`, etc.
+   */
+  signInProvider?: string;
+
+  /**
+   * If specified, the multi-factor authentication to apply.
+   *
+   * @remarks
+   * Has no effect if the associated identity has no multi-factor enrollments.
+   * When provided, the mock will attempt to resolve a matching enrollment and
+   * populate {@link FirebaseIdentities.sign_in_second_factor} and
+   * {@link FirebaseIdentities.second_factor_identifier}.
+   */
+  multifactorSelector?: MultiFactorIdentifier | MultiFactorSelector;
+}
 
 /**
  * Options controlling how a {@link AuthenticatedRequestContext} or
@@ -397,7 +635,8 @@ export type AuthKey = string | number;
  *   app part and (optionally) App Check are still present.
  * - Time values accept either epoch-seconds or `Date` and are normalized.
  */
-export interface AuthContextOptions<TKey extends AuthKey = AuthKey> {
+export interface AuthContextOptions<TKey extends AuthKey = AuthKey>
+  extends IdentityOptions {
   /**
    * Identity registry key used to resolve the identity from the provider
    * (for example, {@link AuthManager}).
@@ -415,7 +654,7 @@ export interface AuthContextOptions<TKey extends AuthKey = AuthKey> {
    * - Defaults to `now()` when omitted.
    * - Ignored when `key` is not provided (i.e. unauthenticated).
    */
-  iat?: number | Date;
+  iat?: AuthDateConstructor;
 
   /**
    * Session authentication time.
@@ -425,7 +664,7 @@ export interface AuthContextOptions<TKey extends AuthKey = AuthKey> {
    * - Defaults to `iat - 30 minutes` when omitted.
    * - Ignored when `key` is not provided.
    */
-  authTime?: number | Date;
+  authTime?: AuthDateConstructor;
 
   /**
    * Expiration time for the ID token.
@@ -435,7 +674,7 @@ export interface AuthContextOptions<TKey extends AuthKey = AuthKey> {
    * - Defaults to `iat + 30 minutes` when omitted.
    * - Ignored when `key` is not provided.
    */
-  expires?: number | Date;
+  expires?: AuthDateConstructor;
 
   /**
    * Per-invocation App Check override.
@@ -447,4 +686,142 @@ export interface AuthContextOptions<TKey extends AuthKey = AuthKey> {
    *   normalize missing fields.
    */
   appCheck?: AppCheckConstructor | boolean;
+}
+
+/**
+ * Describes a sign-in provider used when building identities.
+ *
+ * @remarks
+ * Instances are typically created using the static factory properties/methods
+ * (for example, {@link SignInProvider.Google}, {@link SignInProvider.anonymous},
+ * {@link SignInProvider.custom}).
+ */
+export class SignInProvider {
+  /** Built-in Apple sign-in provider. */
+  static readonly Apple = new SignInProvider('apple');
+
+  /** Built-in Facebook sign-in provider. */
+  static readonly Facebook = new SignInProvider('facebook');
+
+  /** Built-in Game Center sign-in provider. */
+  static readonly GameCenter = new SignInProvider('gamecenter');
+
+  /** Built-in GitHub sign-in provider. */
+  static readonly GitHub = new SignInProvider('github');
+
+  /** Built-in Google sign-in provider. */
+  static readonly Google = new SignInProvider('google');
+
+  /** Built-in Microsoft sign-in provider. */
+  static readonly Microsoft = new SignInProvider('microsoft');
+
+  /** Built-in phone (SMS) sign-in provider. */
+  static readonly Phone = new SignInProvider('phone');
+
+  /** Built-in email/password sign-in provider. */
+  static readonly Password = new SignInProvider('password');
+
+  /** Built-in Play Games sign-in provider. */
+  static readonly PlayGames = new SignInProvider('playgames');
+
+  /** Built-in Twitter sign-in provider. */
+  static readonly Twitter = new SignInProvider('twitter');
+
+  /**
+   * The sign-in provider ID (for example, `"google.com"` for the Google provider).
+   */
+  readonly signInProvider: string;
+
+  private constructor(
+    /**
+     * Canonical shortcut type for this provider.
+     */
+    readonly type: SignInProviderType,
+    signInProvider?: string,
+    /**
+     * Optional user profile seed used when synthesizing provider data.
+     */
+    readonly data?: UserConstructor
+  ) {
+    this.signInProvider = signInProvider ?? this.normalizedProvider();
+  }
+
+  /**
+   * Return a new {@link SignInProvider} with the same type/providerId but
+   * overridden user profile data.
+   *
+   * @remarks
+   * For `'anonymous'` providers, this method is a no-op and returns the
+   * existing instance.
+   */
+  override(data: UserConstructor): SignInProvider {
+    if (this.type === 'anonymous') return this;
+
+    return new SignInProvider(this.type, this.signInProvider, data);
+  }
+
+  /**
+   * Create an anonymous sign-in provider with an optional fixed UID.
+   *
+   * @remarks
+   * Anonymous providers do not contribute email/phone identities.
+   */
+  static anonymous(uid?: string): SignInProvider {
+    return new SignInProvider('anonymous', undefined, { uid });
+  }
+
+  /**
+   * Create a custom sign-in provider with an arbitrary provider ID.
+   *
+   * @remarks
+   * - If `signInProvider` is `'anonymous'`, an anonymous provider is returned.
+   * - Otherwise, the provider is tagged as `'custom'` and uses the given
+   *   `signInProvider` string verbatim.
+   */
+  static custom(signInProvider: string, data: UserConstructor): SignInProvider {
+    if (signInProvider === 'anonymous')
+      return SignInProvider.anonymous(data.uid);
+
+    return new SignInProvider('custom', signInProvider, data);
+  }
+
+  /**
+   * Resolve a Firebase-style provider ID for this provider type.
+   *
+   * @remarks
+   * For example:
+   * - `'google'` → `"google.com"`
+   * - `'apple'` → `"apple.com"`
+   * - `'microsoft'` → `"microsoft.com"`
+   * - `'phone'` → `"phone"`
+   * - `'anonymous'` → `"anonymous"`
+   */
+  private normalizedProvider(): string {
+    switch (this.type) {
+      case 'google':
+        return 'google.com';
+      case 'apple':
+        return 'apple.com';
+      case 'microsoft':
+        return 'microsoft.com';
+      case 'twitter':
+        return 'twitter.com'; // not "x.com"
+      case 'github':
+        return 'github.com';
+      case 'facebook':
+        return 'facebook.com';
+      case 'yahoo':
+        return 'yahoo.com';
+      case 'playgames':
+        return 'playgames.google.com';
+      case 'gamecenter':
+        return 'gc.apple.com';
+      case 'password':
+      case 'phone':
+      case 'anonymous':
+      case 'custom':
+      default:
+        return this.type;
+    }
+  }
 }

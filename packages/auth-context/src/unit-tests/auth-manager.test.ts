@@ -1,19 +1,12 @@
 import { DecodedAppCheckToken } from 'firebase-admin/app-check';
 import { AuthManager } from '../lib/auth-manager.js';
-import { MockIdentity } from '../lib/types.js';
+import { MockIdentity, SignInProvider, UserConstructor } from '../lib/types.js';
 
 describe('AuthManager (general features)', () => {
   const FIXED_MS = Date.UTC(2025, 0, 2, 3, 4, 5, 678); // 2025-01-02T03:04:05.678Z
   const FIXED_SEC = Math.floor(FIXED_MS / 1000);
   const M30 = 30 * 60;
   const H1 = 60 * 60;
-
-  test('constructs anonymous identity', () => {
-    const mgr = new AuthManager();
-    mgr.register('anon', {
-      signInProvider: 'anonymous',
-    });
-  });
 
   test('constructs with explicit overrides and exposes derived fields', () => {
     const mgr = new AuthManager({
@@ -44,7 +37,7 @@ describe('AuthManager (general features)', () => {
     const mgr = new AuthManager({ now: () => FIXED_MS });
     mgr.register('alice', {
       email: 'alice@example.com',
-      signInProvider: 'google',
+      providers: SignInProvider.Google,
     });
 
     // Identity is returned as a deep clone (mutating it should not change stored template)
@@ -70,7 +63,7 @@ describe('AuthManager (general features)', () => {
     // Deregister returns true only when it existed
     expect(mgr.deregister('alice')).toBe(true);
     expect(mgr.deregister('alice')).toBe(false);
-    expect(mgr.identity('alice')).toBeUndefined();
+    expect(() => mgr.identity('alice')).toThrow(/not registered/i);
   });
 
   test('context(): default timing and app-check presence', () => {
@@ -80,7 +73,10 @@ describe('AuthManager (general features)', () => {
       projectId: 'proj-ctx',
       appId: '1:555000111:web:abc123',
     });
-    mgr.register('bob', { email: 'bob@example.com', signInProvider: 'google' });
+    mgr.register('bob', {
+      email: 'bob@example.com',
+      providers: SignInProvider.Google,
+    });
 
     const ctx = mgr.context({ key: 'bob' });
     expect(ctx.iat).toBe(FIXED_SEC);
@@ -172,80 +168,177 @@ describe('AuthManager (general features)', () => {
     const mgr = new AuthManager({ now: () => FIXED_MS });
 
     // google → google.com + identities bucket
-    mgr.register('g', { email: 'g@example.com', signInProvider: 'google' });
+    mgr.register('g', {
+      email: 'g@example.com',
+      providers: SignInProvider.Google.override({ email: 'g@example.com' }),
+    });
     const g = mgr.identity('g') as MockIdentity;
     expect(g.firebase.sign_in_provider).toBe('google.com');
     expect(g.firebase.identities['google.com']?.length).toBe(1);
     expect(g.firebase.identities.email?.[0]).toBe('g@example.com');
 
     // password keeps 'password' and includes email identity
-    mgr.register('p', { email: 'p@example.com', signInProvider: 'password' });
-    const p = mgr.identity('p') as MockIdentity;
+    mgr.register('p', {
+      email: 'p@example.com',
+      providers: SignInProvider.Password.override({ email: 'p@example.com' }),
+    });
+    const p = mgr.identity('p');
     expect(p.firebase.sign_in_provider).toBe('password');
     expect(p.firebase.identities.email?.[0]).toBe('p@example.com');
 
     // anonymous keeps 'anonymous' and typically no identities bucket
-    mgr.register('a', { signInProvider: 'anonymous' });
-    const a = mgr.identity('a') as MockIdentity;
+    mgr.register('a', { providers: SignInProvider.anonymous() });
+    const a = mgr.identity('a');
     expect(a.firebase.sign_in_provider).toBe('anonymous');
     expect(a.firebase.identities ?? {}).toEqual({});
   });
 
-  test('oauthIds seeding: fixed IDs for specified providers, generated for others', () => {
-    const mgr = new AuthManager({
-      now: () => FIXED_MS,
-      oauthIds: {
-        'google.com': 'CONST_GOOGLE_UID',
-        'apple.com': undefined, // explicit: still forces generation (non-empty)
+  test('context(): throws for unknown keys', () => {
+    const mgr = new AuthManager();
+    expect(() => mgr.context({ key: 'missing' })).toThrow(/not registered/i);
+  });
+
+  it('Defaults user info to that of the first sign-in provider', () => {
+    const GoogleProvider = SignInProvider.Google.override({
+      email: 'jonathan-smith@gmail.com',
+      displayName: 'Jon Smith',
+      phoneNumber: '+15551234567',
+      photoURL: 'https://drive.google.com/image1.png',
+    });
+    const MicrosoftProvider = SignInProvider.Microsoft.override({
+      email: 'jonathan-smith@outlook.com',
+      displayName: 'Jonathan Smith',
+      phoneNumber: '+15557654321',
+      photoURL: 'https://onedrive.com/image1.png',
+    });
+    const manager = new AuthManager();
+    manager.register('u1', {
+      providers: [GoogleProvider, MicrosoftProvider],
+      multiFactorEnrollments: [{ factorId: 'phone' }, { factorId: 'totp' }],
+      multiFactorDefault: 'phone',
+    });
+
+    manager.register('u2', {
+      providers: [MicrosoftProvider, GoogleProvider],
+      multiFactorEnrollments: [{ factorId: 'phone' }, { factorId: 'totp' }],
+      multiFactorDefault: 'phone',
+    });
+    const gIdentity = manager.identity('u1');
+    const msIdentity = manager.identity('u2');
+
+    function expectUserInfo(id: MockIdentity, provider: SignInProvider): void {
+      expect(provider.data).toBeDefined();
+      const data = provider.data as UserConstructor;
+      expect(id.name).toBe(data.displayName);
+      expect(id.email).toBe(data.email);
+      expect(id.phone_number).toBe(data.phoneNumber);
+      expect(id.photo_url).toBe(data.photoURL);
+    }
+
+    expectUserInfo(gIdentity, GoogleProvider);
+    expectUserInfo(msIdentity, MicrosoftProvider);
+  });
+
+  it('Correctly resolves MFA defaults and overrides', () => {
+    const manager = new AuthManager();
+    manager.register('u1', {
+      providers: SignInProvider.Google,
+      multiFactorEnrollments: [{ factorId: 'phone' }, { factorId: 'totp' }],
+      multiFactorDefault: 'totp',
+    });
+    manager.register('u2', {
+      providers: SignInProvider.Google,
+      multiFactorEnrollments: [{ factorId: 'totp' }, { factorId: 'phone' }],
+      multiFactorDefault: 'phone',
+    });
+
+    const id1 = manager.identity('u1');
+    expect(id1.firebase.sign_in_second_factor).toBe('totp');
+    expect(id1.firebase.second_factor_identifier).toBeDefined();
+    const id2 = manager.identity('u2');
+    expect(id2.firebase.sign_in_second_factor).toBe('phone');
+    expect(id2.firebase.second_factor_identifier).toBeDefined();
+    const id3 = manager.identity('u1', { multifactorSelector: 'phone' });
+    expect(id3.firebase.sign_in_second_factor).toBe('phone');
+    expect(id3.firebase.second_factor_identifier).toBeDefined();
+    const id4 = manager.identity('u2', { multifactorSelector: 'totp' });
+    expect(id4.firebase.sign_in_second_factor).toBe('totp');
+    expect(id4.firebase.second_factor_identifier).toBeDefined();
+  });
+
+  test('constructs anonymous tokens', () => {
+    const mgr = new AuthManager();
+    mgr.register('anon', {
+      providers: SignInProvider.anonymous(),
+    });
+    const id = mgr.identity('anon');
+    expect(id.firebase.sign_in_provider).toBe('anonymous');
+    expect(id.firebase.identities).toEqual({});
+  });
+
+  it('Ignores MFA for anonymous tokens', () => {
+    const manager = new AuthManager();
+    manager.register('u1', {
+      providers: SignInProvider.anonymous(),
+      multiFactorEnrollments: [{ factorId: 'phone' }, { factorId: 'totp' }],
+      multiFactorDefault: 'totp',
+    });
+
+    const id1 = manager.identity('u1');
+    expect(id1.firebase.sign_in_provider).toBe('anonymous');
+    expect(id1.firebase.sign_in_second_factor).toBeUndefined();
+    expect(id1.firebase.second_factor_identifier).toBeUndefined();
+    const id2 = manager.identity('u1', { multifactorSelector: 'phone' });
+    expect(id2.firebase.sign_in_provider).toBe('anonymous');
+    expect(id2.firebase.sign_in_second_factor).toBeUndefined();
+    expect(id2.firebase.second_factor_identifier).toBeUndefined();
+  });
+
+  it('Ignores identity fields for anonymous tokens', () => {
+    const manager = new AuthManager();
+    manager.register('u1', {
+      providers: SignInProvider.anonymous(),
+      phoneNumber: '+5551234567',
+      email: 'user@example.com',
+      emailVerified: true,
+    });
+
+    const id1 = manager.identity('u1');
+    expect(id1.firebase.sign_in_provider).toBe('anonymous');
+    expect(id1.email).toBeUndefined();
+    expect(id1.email_verified).toBeUndefined();
+    expect(id1.phone_number).toBeUndefined();
+  });
+
+  it('Allows custom claims for anonymous tokens', () => {
+    const manager = new AuthManager();
+    manager.register('u1', {
+      providers: SignInProvider.anonymous(),
+      customClaims: {
+        custom_claim_string: 'test',
+        custom_claim_number: 123,
+        custom_claim_boolean: true,
       },
     });
 
-    mgr.register('g', { signInProvider: 'google' });
-    mgr.register('a', { signInProvider: 'apple' });
-    mgr.register('t', { signInProvider: 'twitter' });
-    mgr.register('g2', { signInProvider: 'google' });
-    mgr.register('a2', { signInProvider: 'apple' });
-    mgr.register('t2', { signInProvider: 'twitter' });
-
-    const g = mgr.identity('g') as MockIdentity;
-    const a = mgr.identity('a') as MockIdentity;
-    const t = mgr.identity('t') as MockIdentity;
-
-    expect(g.firebase.sign_in_provider).toBe('google.com');
-
-    // For apple & twitter we only assert "truthy" stable values (exact value is generated)
-    const googleId = firebasePid('google.com', g);
-    const appleId = firebasePid('apple.com', a);
-    const twId = firebasePid('twitter.com', t);
-
-    expect(googleId).toBe('CONST_GOOGLE_UID');
-    expect(typeof appleId).toBe('string');
-    expect(appleId).toBeTruthy();
-
-    expect(typeof twId).toBe('string');
-    expect(twId).toBeTruthy();
-
-    // Identities with common oauth-registered providers should have consistent ids,
-    // others should not despite having the same provider.
-    const g2 = mgr.identity('g2') as MockIdentity;
-    const a2 = mgr.identity('a2') as MockIdentity;
-    const t2 = mgr.identity('t2') as MockIdentity;
-    const googleId2 = firebasePid('google.com', g2);
-    const appleId2 = firebasePid('apple.com', a2);
-    const twId2 = firebasePid('twitter.com', t2);
-    expect(googleId).toBe(googleId2);
-    expect(appleId).toBe(appleId2);
-    expect(twId).not.toBe(twId2);
+    const id1 = manager.identity('u1');
+    expect(id1['custom_claim_string']).toBe('test');
+    expect(id1['custom_claim_number']).toBe(123);
+    expect(id1['custom_claim_boolean']).toBe(true);
   });
 
-  test('context(): throws for unknown keys', () => {
-    const mgr = new AuthManager();
-    expect(() => mgr.context({ key: 'missing' })).toThrow(
-      /no identity registered/i
-    );
+  it('Allows non-identifying standard claims for anonymous tokens', () => {
+    const manager = new AuthManager();
+    manager.register('u1', {
+      providers: SignInProvider.anonymous(),
+      displayName: 'User One',
+      photoURL: 'https://photos.com/photo.png',
+      tenantId: 't12345',
+    });
+
+    const id1 = manager.identity('u1');
+    expect(id1.name).toBe('User One');
+    expect(id1.photo_url).toBe('https://photos.com/photo.png');
+    expect(id1.firebase.tenant).toBe('t12345');
   });
 });
-
-function firebasePid(provider: string, id: MockIdentity): string {
-  return id.firebase.identities[provider]?.[0];
-}

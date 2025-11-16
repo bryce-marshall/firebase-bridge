@@ -1,5 +1,5 @@
 import { CallableRequest, HttpsFunction } from 'firebase-functions/v2/https';
-import { JustCallable } from '../_internal/util.js';
+import { JustCallable } from '../_internal/types.js';
 import { CloudFunctionsParsedBody, MockHttpResponse } from '../http/types.js';
 import { AuthKey } from '../types.js';
 import { CallableFunctionRequest, RawHttpRequest } from './types.js';

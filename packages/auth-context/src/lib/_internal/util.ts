@@ -1,17 +1,4 @@
-/**
- * Strips any decorator properties from a callable (`Function`) type.
- */
-export type JustCallable<T> = T extends { (...args: infer A): infer R }
-  ? (...args: A) => R
-  : never;
-
-/**
- * Make every key in T optional, but if it’s present,
- * its value must be exactly `undefined`.
- */
-export type Undefinedify<T> = {
-  [K in keyof T]?: undefined;
-};
+import { AuthDateConstructor } from '../types.js';
 
 /**
  * Normalize a possibly-sync function into a Promise.
@@ -62,16 +49,42 @@ export function execPromise<T>(executor: () => T | Promise<T>): Promise<T> {
  * - This is not a general-purpose deep clone; it is designed for config/POJO data.
  */
 export function cloneDeep<T>(v: T): T {
-  if (v == null || typeof v !== 'object') return v;
-  if (v instanceof Date) return new Date(v) as T;
-  if (Array.isArray(v)) return v.map(cloneDeep) as unknown as T;
-  if (Object.getPrototypeOf(v) === Object.prototype) {
-    const o = {} as { [K in keyof T]: T[K] };
-    for (const k in v) o[k as keyof T] = cloneDeep((v as T)[k as keyof T]);
-    return o;
+  const seen = new Map<object, unknown>();
+
+  function walk<T>(v: T): T {
+    if (v == null || typeof v !== 'object') return v;
+    if (v instanceof Date) return new Date(v) as T;
+
+    // If we've seen this object/array before, return the clone
+    if (seen.has(v)) return seen.get(v) as T;
+
+    if (Array.isArray(v)) {
+      const arr: unknown[] = [];
+      // store before recursing to handle self-refs
+      seen.set(v as object, arr);
+      for (let i = 0; i < v.length; i++) {
+        arr[i] = walk(v[i]);
+      }
+      return arr as unknown as T;
+    }
+
+    if (Object.getPrototypeOf(v) === Object.prototype) {
+      const o = {} as { [K in keyof T]: T[K] };
+      // store before recursing
+      seen.set(v as object, o);
+      for (const k in v) {
+        o[k as keyof T] = walk((v as T)[k as keyof T]);
+      }
+      return o;
+    }
+
+    return v;
   }
-  return v;
+
+  return walk(v);
 }
+
+const INVALID_DATE_CONSTRUCTOR_MSG = 'Invalid AuthDateConstructor';
 
 /**
  * Convert a `Date` or epoch seconds into a numeric seconds since epoch, preserving `undefined`.
@@ -86,12 +99,39 @@ export function cloneDeep<T>(v: T): T {
  * valueOfDate(undefined)     // undefined
  * ```
  */
-export function epochSeconds(
-  value: Date | number | undefined
-): number | undefined {
-  if (value == undefined) return undefined;
+export function epochSeconds(value: AuthDateConstructor): number {
+  switch (typeof value) {
+    case 'number':
+      return value;
 
-  return typeof value === 'number' ? value : millisToSeconds(value.valueOf());
+    case 'string':
+      return millisToSeconds(new Date(value).valueOf());
+
+    case 'object':
+      return millisToSeconds((value as Date).valueOf());
+
+    default:
+      throw new Error(INVALID_DATE_CONSTRUCTOR_MSG);
+  }
+}
+
+/**
+ * Generates a UTC Date string from an `AuthDateConstructor`.
+ */
+export function utcDate(value: AuthDateConstructor): string {
+  switch (typeof value) {
+    case 'number':
+      return new Date(secondsToMillis(value)).toUTCString();
+
+    case 'object':
+      return (value as Date).toUTCString();
+
+    case 'string':
+      return new Date(value).toUTCString();
+
+    default:
+      throw new Error(INVALID_DATE_CONSTRUCTOR_MSG);
+  }
 }
 
 /**
@@ -106,6 +146,10 @@ export function epochSeconds(
  */
 export function millisToSeconds(millis: number): number {
   return Math.trunc(millis / 1_000);
+}
+
+export function secondsToMillis(millis: number): number {
+  return Math.round(millis * 1_000);
 }
 
 /**
@@ -234,8 +278,8 @@ export function alphanumericId(
 /**
  * Generates a URL-safe base64-like string of the specified length.
  * No padding character is added.
- * @param length 
- * @returns 
+ * @param length
+ * @returns
  */
 export function base64LikeId(length: number): string {
   return id(
@@ -268,4 +312,38 @@ function id(chars: string, length: number): string {
   }
 
   return autoId;
+}
+
+/**
+ * The minimum latency to apply. Note that `queueMicrotask()` does not guarantee sufficient
+ * latency to recreate certain transactional conflicts that might otherwise occur in the
+ * production/emulator environments.
+ */
+const MIN_LATENCY = 3;
+
+/**
+ * Returns a `Promise` that resolves asynchronously with latency.
+ */
+export function resolvePromise(): Promise<void>;
+/**
+ * Returns a `Promise` that resolves `value` asynchronously with latency.
+ */
+export function resolvePromise<T>(value: T, delay?: number): Promise<T>;
+export function resolvePromise(
+  value?: unknown,
+  delay?: number
+): Promise<unknown> {
+  delay = Math.max(delay ?? MIN_LATENCY, MIN_LATENCY);
+  return new Promise((resolve) => {
+    setTimeout(() => resolve(value), delay);
+  });
+}
+
+/**
+ * Returns a `Promise` that rejects asynchronously using `queueMicrotask`.
+ */
+export function rejectPromise<T>(reason: unknown): Promise<T> {
+  return new Promise<T>((_resolve, reject) => {
+    queueMicrotask(() => reject(reason));
+  });
 }

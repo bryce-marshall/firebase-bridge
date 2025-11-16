@@ -1,4 +1,4 @@
-import { AutoProvider } from '../types.js';
+import { SignInProviderType } from '../types.js';
 import {
     alphanumericId,
     base64LikeId,
@@ -7,7 +7,7 @@ import {
     userId,
 } from './util.js';
 
-export function providerId(type: AutoProvider | string): string {
+export function providerId(type: SignInProviderType | string): string {
   switch (type) {
     case 'google':
     case 'google.com':
