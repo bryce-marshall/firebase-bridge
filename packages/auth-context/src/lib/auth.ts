@@ -287,7 +287,9 @@ export abstract class BaseAuth implements IAuth {
         ai = this.tenants.find(this._tenantId, pred);
       }
       if (ai) {
-        r.users.push(toUserRecord(ai));
+        if (!r.users.find((v) => v.uid === ai.uid)) {
+          r.users.push(toUserRecord(ai));
+        }
       } else {
         r.notFound.push(id as UserIdentifier);
       }
