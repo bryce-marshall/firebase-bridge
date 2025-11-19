@@ -3,6 +3,12 @@ import { applyToJSON } from './auth-helpers.js';
 
 /**
  * The set of possible Auth error codes.
+ *
+ * @remarks
+ * This union mirrors the documented `auth/*` error codes from the Firebase
+ * Admin Authentication API, but **without** the `"auth/"` prefix. When used
+ * with {@link authError}, each code is automatically prefixed to form the
+ * full `FirebaseError.code` (for example, `"auth/user-not-found"`).
  */
 export type AuthErrorCode =
   | 'claims-too-large'
@@ -62,12 +68,31 @@ export type AuthErrorCode =
   | 'user-disabled'
   | 'user-not-found';
 
+/**
+ * Creates a `uid-already-exists` {@link FirebaseError} for a given UID.
+ *
+ * @remarks
+ * This helper mirrors the error shape thrown by the Admin SDK when attempting
+ * to create a user with a UID that already exists in the project.
+ *
+ * @param uid - The conflicting user identifier.
+ * @returns A {@link FirebaseError} with `code === "auth/uid-already-exists"`.
+ */
 export function uidExistsError(uid: string): FirebaseError {
-  return authError(
-    'uid-already-exists',
-    `The uid ${uid} already exists.`
-  );
+  return authError('uid-already-exists', `The uid ${uid} already exists.`);
 }
+
+/**
+ * Creates a `user-not-found` {@link FirebaseError} for a given lookup key set.
+ *
+ * @remarks
+ * The `keys` argument is serialized into the error message to aid debugging.
+ * Typical usage is to pass an object such as `{ uid }`, `{ email }`, or a
+ * composite like `{ providerId, uid }`.
+ *
+ * @param keys - Name/value pairs describing the lookup criteria that failed.
+ * @returns A {@link FirebaseError} with `code === "auth/user-not-found"`.
+ */
 export function userNotFoundError(keys: Record<string, string>): FirebaseError {
   return authError(
     'user-not-found',
@@ -75,6 +100,24 @@ export function userNotFoundError(keys: Record<string, string>): FirebaseError {
   );
 }
 
+/**
+ * Constructs a {@link FirebaseError} instance for the given auth error code.
+ *
+ * @remarks
+ * - The returned error has `code` set to `"auth/<code>"`.
+ * - The error's `message` is either:
+ *   - `"auth/<code>"` when `message` is omitted, or
+ *   - `"auth/<code>: <message>"` when a message is provided.
+ * - {@link applyToJSON} is called on the error so that `toJSON()` returns
+ *   a data-only representation suitable for logging or serialization.
+ *
+ * This is the central factory used throughout the mock to ensure consistent
+ * error formatting and typing.
+ *
+ * @param code - An {@link AuthErrorCode} (without the `auth/` prefix).
+ * @param message - Optional human-readable message to append.
+ * @returns A {@link FirebaseError} with a fully-qualified auth error code.
+ */
 export function authError(
   code: AuthErrorCode,
   message?: string
@@ -90,12 +133,38 @@ export function authError(
   return error;
 }
 
+/**
+ * Normalizes an unknown error value into a {@link FirebaseError}.
+ *
+ * @remarks
+ * - If `e` is already a {@link FirebaseError} (as per {@link isFirebaseError}),
+ *   it is returned unchanged.
+ * - Otherwise, a new `auth/internal-error` is returned, with the original
+ *   error's message (when available) appended.
+ *
+ * This is useful when catching arbitrary exceptions and rethrowing them in
+ * a form consistent with Firebase Auth semantics.
+ *
+ * @param e - Error-like value to normalize.
+ * @returns A {@link FirebaseError} instance representing the error.
+ */
 export function asAuthError(e: unknown): FirebaseError {
   return isFirebaseError(e)
     ? e
     : authError('internal-error', (e as Error | undefined)?.message);
 }
 
+/**
+ * Type guard that checks whether a value is a {@link FirebaseError}.
+ *
+ * @remarks
+ * The check is intentionally minimal: it simply verifies that the value has
+ * a non-`undefined` `code` property (which the Firebase Admin SDK uses to
+ * distinguish its errors).
+ *
+ * @param e - Value to test.
+ * @returns `true` if `e` is a {@link FirebaseError}; otherwise, `false`.
+ */
 export function isFirebaseError(e: unknown): e is FirebaseError {
   return (e as FirebaseError)?.code != undefined;
 }

@@ -11,7 +11,6 @@ import {
   IUserMetadata,
   PersistedUserInfo,
 } from './_internal/auth-types.js';
-import { providerId } from './_internal/provider-id.js';
 import { TenantManager } from './_internal/tenant-manager.js';
 import {
   AuthProvider,
@@ -29,6 +28,7 @@ import {
   cloneDeep,
   epochSeconds,
   projectNumber,
+  providerId,
   userId,
   utcDate,
 } from './_internal/util.js';
