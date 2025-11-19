@@ -142,7 +142,7 @@ export function decodeAppCheckToken(encoded: string): DecodedAppCheckToken {
  * @param token - The payload to embed in the JWT body.
  * @returns A string in the form `header.payload.signature`.
  */
-function encodeJWT<T>(token: T): string {
+export function encodeJWT<T>(token: T): string {
   const header = { alg: 'none', typ: 'JWT' };
   const headerPart = base64UrlEncode(JSON.stringify(header));
   const payloadPart = base64UrlEncode(JSON.stringify(token));
@@ -161,7 +161,7 @@ function encodeJWT<T>(token: T): string {
  * @returns The decoded payload.
  * @throws If the encoded string is not in JWT format or is not valid base64url.
  */
-function decodeJWT<T>(encoded: string): T {
+export function decodeJWT<T>(encoded: string): T {
   const parts = encoded.split('.');
   if (parts.length < 2) {
     throw new Error('Invalid JWT: expected at least header and payload parts.');

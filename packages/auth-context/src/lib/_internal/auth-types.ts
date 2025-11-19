@@ -1,7 +1,11 @@
 import {
   BaseAuth,
+  EmailIdentifier,
   MultiFactorInfo,
+  PhoneIdentifier,
   PhoneMultiFactorInfo,
+  ProviderIdentifier,
+  UidIdentifier,
   UserInfo,
   UserMetadata,
   UserRecord,
@@ -23,7 +27,9 @@ export interface AuthInstance {
    * Whether the account is disabled.
    */
   disabled: boolean;
+  userInfo: Record<string, PersistedUserInfo>;
   metadata: IUserMetadata;
+  tokensValidAfterTime?: string;
   /** Phone number, if available. */
   phoneNumber?: string | null;
   /** Photo URL, if available. */
@@ -35,7 +41,6 @@ export interface AuthInstance {
   displayName?: string | null;
   passwordHash?: string | null;
   passwordSalt?: string | null;
-  userInfo: Record<string, PersistedUserInfo>;
   multiFactorInfo?: IMultiFactorInfo[];
   multiFactorDefault?: MultiFactorIdentifier | MultiFactorSelector;
   /**
@@ -62,3 +67,7 @@ export type IUserMetadata = MockedDataType<UserMetadata>;
 
 export type IMultiFactorInfo = MockedDataType<MultiFactorInfo>;
 export type IPhoneMultiFactorInfo = MockedDataType<PhoneMultiFactorInfo>;
+
+export type PossibleIdentifier = Partial<
+  UidIdentifier & EmailIdentifier & PhoneIdentifier & ProviderIdentifier
+>;

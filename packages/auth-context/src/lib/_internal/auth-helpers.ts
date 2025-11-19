@@ -1,9 +1,36 @@
-import { UserRecord } from 'firebase-admin/auth';
-import { MultiFactorIdentifier, MultiFactorSelector } from '../types.js';
-import { AuthInstance, IMultiFactorInfo, IUserRecord } from './auth-types.js';
-import { cloneDeep, hexId, numericId } from './util.js';
+import {
+  MultiFactorInfo,
+  UpdateMultiFactorInfoRequest,
+  UserInfo,
+  UserRecord,
+} from 'firebase-admin/auth';
+import {
+  MultiFactorConstructor,
+  MultiFactorIdentifier,
+  MultiFactorSelector,
+  PhoneMultiFactorContructor,
+} from '../types.js';
+import { authError } from './auth-error.js';
+import {
+  AuthInstance,
+  IMultiFactorInfo,
+  IPhoneMultiFactorInfo,
+  IUserRecord,
+} from './auth-types.js';
+import {
+  assignIf,
+  cloneDeep,
+  hexId,
+  numericId,
+  userId,
+  utcDate,
+} from './util.js';
 
 type WithToJSON<T> = T & { toJSON(): object };
+
+export function isValidUid(uid: string | null | undefined): boolean {
+  return typeof uid === 'string' && uid.length > 0 && uid.length <= 128;
+}
 
 /**
  * Claim keys that must NOT be used when setting custom user claims.
@@ -68,12 +95,24 @@ export function validatedCustomClaims(
 
   for (const key of Object.keys(claims)) {
     if (isForbiddenCustomClaim(key))
-      throw new Error(
+      throw authError(
+        'invalid-claims',
         `The key "${key}" is reserved and cannot be used as a custom claim.`
       );
   }
 
-  return JSON.parse(JSON.stringify(claims));
+  let json: string;
+  try {
+    json = JSON.stringify(claims);
+  } catch {
+    throw authError('invalid-claims');
+  }
+
+  if (json.length > 1000) {
+    throw authError('claims-too-large');
+  }
+
+  return JSON.parse(json);
 }
 
 export function isForbiddenCustomClaim(key: string): boolean {
@@ -106,31 +145,60 @@ export function applyToJSON<T>(target: T | T[] | undefined): void {
   }
 }
 
+export type AuthInstancePredicate = (ai: AuthInstance) => boolean;
+
+export function findUserRecord(
+  store: Map<string, AuthInstance>,
+  predicate: AuthInstancePredicate
+): UserRecord | undefined {
+  for (const ai of store.values()) {
+    if (predicate(ai)) return toUserRecord(ai);
+  }
+
+  return undefined;
+}
+
 export function getUserRecord(
   uid: string,
   store: Map<string, AuthInstance>
 ): UserRecord | undefined {
   const ai = store.get(uid);
-  if (!ai) return undefined;
 
-  // const metadata = 
+  return ai ? toUserRecord(ai) : undefined;
+}
 
-  // const ur: IUserRecord = {
-  //   uid: ai.uid,
-  //   disabled: ai.disabled,
-  //   emailVerified: ai.emailVerified === true,
-    
+export function toUserRecord(ai: AuthInstance): UserRecord {
+  const providerData = cloneDeep(Object.values(ai.userInfo)) as UserInfo[];
+  applyToJSON(providerData);
 
-  // }
+  const ur: IUserRecord = {
+    uid: ai.uid,
+    disabled: ai.disabled,
+    emailVerified: ai.emailVerified === true,
+    metadata: withToJSON(cloneDeep(ai.metadata)),
+    providerData,
+  };
+  if (ai.multiFactorInfo?.length) {
+    ur.multiFactor = withToJSON({
+      enrolledFactors: ai.multiFactorInfo.map((v) =>
+        withToJSON(cloneDeep(v) as MultiFactorInfo)
+      ),
+    });
+  }
+  if (ai.claims && Object.entries(ai.claims).length) {
+    ur.customClaims = cloneDeep(ai.claims);
+  }
 
-  // applyToJSON(ur.multiFactor);
-  // applyToJSON(ur.multiFactor?.enrolledFactors);
-  // applyToJSON(ur.metadata);
-  // applyToJSON(ur.providerData);
+  assignIf(ur, 'email', ai.email);
+  assignIf(ur, 'displayName', ai.displayName);
+  assignIf(ur, 'photoURL', ai.photoURL);
+  assignIf(ur, 'phoneNumber', ai.phoneNumber);
+  assignIf(ur, 'passwordHash', ai.passwordHash);
+  assignIf(ur, 'passwordSalt', ai.passwordSalt);
+  assignIf(ur, 'tenantId', ai.tenantId);
+  assignIf(ur, 'tokensValidAfterTime', ai.tokensValidAfterTime);
 
-  // return withToJSON(ur);
-
-  return undefined;
+  return ur as UserRecord;
 }
 
 export function resolveSecondFactor(
@@ -158,4 +226,46 @@ export function resolveSecondFactor(
   }
 
   return cloneDeep(result);
+}
+
+export function assignMultiFactors(
+  ai: AuthInstance,
+  enrollments:
+    | MultiFactorConstructor[]
+    | UpdateMultiFactorInfoRequest[]
+    | null
+    | undefined
+): void {
+  if (!enrollments?.length) return;
+
+  for (const mfe of enrollments) {
+    if (!mfe) continue;
+
+    const mfi: IMultiFactorInfo = {
+      factorId: mfe.factorId,
+      uid: mfe.uid ?? userId(),
+    };
+    if (mfi.factorId === 'phone') {
+      assignIf(
+        mfi as IPhoneMultiFactorInfo,
+        'phoneNumber',
+        (mfe as PhoneMultiFactorContructor).phoneNumber
+      );
+    }
+    assignIf(mfi, 'displayName', mfe.displayName);
+    assignIf(
+      mfi,
+      'enrollmentTime',
+      mfe.enrollmentTime ? utcDate(mfe.enrollmentTime) : undefined
+    );
+    (ai.multiFactorInfo ?? (ai.multiFactorInfo = [])).push(mfi);
+  }
+}
+
+export function base64PasswordHash(password: string): string {
+  return '';
+}
+
+export function base64PasswordSalt(): string {
+  return '';
 }

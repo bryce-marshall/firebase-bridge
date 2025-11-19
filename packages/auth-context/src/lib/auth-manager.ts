@@ -1,5 +1,6 @@
 import { DecodedAppCheckToken } from 'firebase-admin/app-check';
 import {
+  assignMultiFactors,
   generateEmail,
   generatePhoneNumber,
   resolveSecondFactor,
@@ -7,12 +8,11 @@ import {
 } from './_internal/auth-helpers.js';
 import {
   AuthInstance,
-  IMultiFactorInfo,
-  IPhoneMultiFactorInfo,
   IUserMetadata,
   PersistedUserInfo,
 } from './_internal/auth-types.js';
 import { providerId } from './_internal/provider-id.js';
+import { TenantManager } from './_internal/tenant-manager.js';
 import {
   AuthProvider,
   DEFAULT_PROJECT_ID,
@@ -24,9 +24,10 @@ import {
 } from './_internal/types.js';
 import {
   appId,
+  assignDefer,
+  assignIf,
   cloneDeep,
   epochSeconds,
-  millisToSeconds,
   projectNumber,
   userId,
   utcDate,
@@ -44,7 +45,6 @@ import {
   IdentityConstructor,
   IdentityOptions,
   MockIdentity,
-  PhoneMultiFactorContructor,
   UnauthenticatedRequestContext,
 } from './types.js';
 
@@ -124,10 +124,7 @@ export interface AuthManagerOptions {
 export class AuthManager<TKey extends AuthKey = AuthKey>
   implements AuthProvider<TKey>
 {
-  private _defaults = new Map<TKey, AuthInstance>();
-  private _instances = new Map<string, AuthInstance>();
-  private _now: () => number;
-  private _epochSeconds: () => number;
+  private _tenantManager: TenantManager<TKey>;
 
   /**
    * Firebase App ID used for App Check tokens (`sub`, `app_id`).
@@ -178,15 +175,14 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    * @param options - Optional initialization overrides. See {@link AuthManagerOptions}.
    */
   constructor(options?: AuthManagerOptions) {
-    this._now = options?.now ?? (() => Date.now());
-    this._epochSeconds = () => millisToSeconds(this._now());
+    this._tenantManager = new TenantManager(options?.now ?? (() => Date.now()));
     this.projectNumber = options?.projectNumber ?? projectNumber();
     this.appId = options?.appId ?? appId(this.projectNumber);
     this.projectId = options?.projectId ?? DEFAULT_PROJECT_ID;
     this.region = options?.region ?? DEFAULT_REGION;
     this.iss = formatIss(this.projectNumber);
     this.https = new _HttpsBroker(this);
-    this.auth = new Auth(this._instances, this._now);
+    this.auth = new Auth(this._tenantManager);
   }
 
   /**
@@ -204,13 +200,8 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    *   methods return deep-cloned copies.
    */
   register(key: TKey, identity?: IdentityConstructor): string {
-    if (this._defaults.has(key))
-      throw new Error(identityError(key, 'Already registered'));
-
     const ai = this.authInstance(identity ?? {});
-    this._defaults.set(key, ai);
-    // Clone the working instance because it is mutable
-    this._instances.set(ai.uid, cloneDeep(ai));
+    this._tenantManager.register(key, ai);
 
     return ai.uid;
   }
@@ -226,13 +217,7 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    * subsequent attempts to use `key` for a context will fail with an error.
    */
   deregister(key: TKey): boolean {
-    const value = this._defaults.get(key);
-    if (!value) return false;
-
-    this._defaults.delete(key);
-    this._instances.delete(value.uid);
-
-    return true;
+    return this._tenantManager.deregister(key);
   }
 
   /**
@@ -263,7 +248,7 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
     const key = options?.key;
     if (key) {
       const identity = this.identity(key, options);
-      const iat = epochSeconds(options?.iat ?? this._epochSeconds());
+      const iat = epochSeconds(options?.iat ?? this._tenantManager.epoch());
       const auth_time = epochSeconds(
         options?.authTime ?? iat - EPOCH_MINUTES_30
       );
@@ -301,10 +286,7 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    *   (`updateUser`, etc.) while keeping the registry intact.
    */
   reset(): void {
-    this._instances.clear();
-    for (const mock of this._defaults.values()) {
-      this._instances.set(mock.uid, cloneDeep(mock));
-    }
+    this._tenantManager.reset();
   }
 
   /**
@@ -319,7 +301,6 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    * - Preserves arbitrary additional properties on the token.
    */
   protected appCheck(c?: AppCheckConstructor | undefined): AppCheckData {
-    const alreadyConsumed = c?.alreadyConsumed === true;
     // Clone the constructor to capture any arbitrary key/value pairs.
     const token = (c ? cloneDeep(c) : {}) as DecodedAppCheckToken;
     // Remove the AppCheckConstructor-specific property
@@ -330,7 +311,9 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
     token.aud = [this.projectNumber, this.projectId];
     token.iss = this.iss;
     // exp and iat may be overriden. Synthesize if not.
-    token.exp = epochSeconds(c?.exp ?? this._epochSeconds() + EPOCH_MINUTES_60);
+    token.exp = epochSeconds(
+      c?.exp ?? this._tenantManager.epoch() + EPOCH_MINUTES_60
+    );
     token.iat = epochSeconds(c?.iat ?? token.exp - EPOCH_MINUTES_60);
     // All other arbitrary values were cloned from the AppCheckConstructor
 
@@ -339,9 +322,7 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
       token,
     };
 
-    if (typeof alreadyConsumed === 'boolean') {
-      r.alreadyConsumed = alreadyConsumed;
-    }
+    assignIf(r, 'alreadyConsumed', c?.alreadyConsumed);
 
     return r;
   }
@@ -365,16 +346,10 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    * - Copies validated custom claims from the underlying `AuthInstance`.
    */
   identity(key: TKey, options?: IdentityOptions): MockIdentity {
-    const uid = this._defaults.get(key)?.uid;
-
-    if (uid == undefined) throw new Error(identityError(key, 'Not registered'));
-
-    const ai = this._instances.get(uid);
-    if (ai == undefined)
-      throw new Error(authInstanceError(key, uid, `has been deleted`));
+    const ai = this._tenantManager.getByKey(key);
 
     if (ai.disabled)
-      throw new Error(authInstanceError(key, uid, `is disabled`));
+      throw new Error(authInstanceError(key, ai.uid, `is disabled`));
 
     const identities: Record<string, string[]> = {};
 
@@ -406,7 +381,7 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
     const isAnonymous = signInProvider === 'anonymous';
 
     const id: RemoveIndexSignature<MockIdentity> = {
-      uid,
+      uid: ai.uid,
       iss: this.iss,
       firebase: {
         sign_in_provider: signInProvider,
@@ -447,7 +422,7 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
     const userMeta = (): IUserMetadata => {
       const meta = c.metadata;
       const creationTime = epochSeconds(
-        meta?.creationTime ?? this._epochSeconds() - EPOCH_DAY
+        meta?.creationTime ?? this._tenantManager.epoch() - EPOCH_DAY
       );
 
       const neverSignedIn = meta?.lastRefreshTime === null;
@@ -498,29 +473,8 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
 
     assignIf(instance, 'multiFactorDefault', c.multiFactorDefault);
     if (c.multiFactorEnrollments) {
-      const enrolements = ensureArray(c.multiFactorEnrollments);
-      for (const mfe of enrolements) {
-        if (!mfe) continue;
-
-        const mfi: IMultiFactorInfo = {
-          factorId: mfe.factorId,
-          uid: mfe.uid ?? userId(),
-        };
-        if (mfi.factorId === 'phone') {
-          assignIf(
-            mfi as IPhoneMultiFactorInfo,
-            'phoneNumber',
-            (mfe as PhoneMultiFactorContructor).phoneNumber
-          );
-        }
-        assignIf(mfi, 'displayName', mfe.displayName);
-        assignIf(
-          mfi,
-          'enrollmentTime',
-          mfe.enrollmentTime ? utcDate(mfe.enrollmentTime) : undefined
-        );
-        (instance.multiFactorInfo ?? (instance.multiFactorInfo = [])).push(mfi);
-      }
+      const enrollments = ensureArray(c.multiFactorEnrollments);
+      assignMultiFactors(instance, enrollments);
     }
 
     if (c.providers) {
@@ -580,39 +534,12 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
     assignIf(instance, 'photoURL', c.photoURL);
     assignIf(instance, 'tenantId', c.tenantId);
 
+    if (c.tokensValidAfterTime) {
+      instance.tokensValidAfterTime = utcDate(c.tokensValidAfterTime);
+    }
+
     return instance;
   }
-}
-
-/**
- * Assigns the `value` to `target` if value is defined and not an empty string and the target property
- * is not already defined.
- */
-function assignDefer<T extends object, K extends keyof T>(
-  target: T,
-  key: K,
-  value: T[K] | undefined
-) {
-  const existing = target[key];
-  if (existing == undefined || existing === '') {
-    assignIf(target, key, value);
-  }
-}
-
-/**
- * Assigns the `value` to `target` if value is defined and not an empty string.
- *
- * @returns `true` if the assignment occurred; otherwise `false`.
- */
-function assignIf<T extends object, K extends keyof T>(
-  target: T,
-  key: K,
-  value: T[K] | undefined | null
-): boolean {
-  if (value == undefined || value === '') return false;
-  target[key] = value;
-
-  return true;
 }
 
 function identityError(key: AuthKey, msg: string): string {

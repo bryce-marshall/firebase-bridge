@@ -153,6 +153,18 @@ export function secondsToMillis(millis: number): number {
 }
 
 /**
+ * Parses an ISO date and returns the date expressed as seconds elapsed since the Unix epoch. 
+ */
+export function isoDateToEpoch(
+  iso: string | null | undefined
+): number | undefined {
+  if (!iso) return undefined;
+
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? undefined : millisToSeconds(ms);
+}
+
+/**
  * Return a trimmed string or a supplied default when empty/whitespace/undefined.
  *
  * @param s - Input string (possibly `undefined`).
@@ -346,4 +358,55 @@ export function rejectPromise<T>(reason: unknown): Promise<T> {
   return new Promise<T>((_resolve, reject) => {
     queueMicrotask(() => reject(reason));
   });
+}
+
+/**
+ * Assigns the `value` to `target` if value is defined and not an empty string and the target property
+ * is not already defined.
+ */
+export function assignDefer<T extends object, K extends keyof T>(
+  target: T,
+  key: K,
+  value: T[K] | undefined
+) {
+  const existing = target[key];
+  if (existing == undefined || existing === '') {
+    assignIf(target, key, value);
+  }
+}
+
+/**
+ * Assigns the `value` to `target` if value is defined and not an empty string.
+ *
+ * @returns `true` if the assignment occurred; otherwise `false`.
+ */
+export function assignIf<T extends object, K extends keyof T>(
+  target: T,
+  key: K,
+  value: T[K] | undefined | null
+): boolean {
+  if (value == undefined || value === '') return false;
+  target[key] = value;
+
+  return true;
+}
+
+/**
+ * Assigns the `value` to `target` if value is defined and not an empty string,
+ * or deletes the
+ *
+ * @returns `true` if the assignment or deletion occurred; otherwise `false`.
+ */
+export function assignIfOrDeleteNull<T extends object, K extends keyof T>(
+  target: T,
+  key: K,
+  value: T[K] | undefined | null
+): boolean {
+  if (value === undefined || value === '') return false;
+  if (value == null) {
+    delete target[key];
+  } else {
+    target[key] = value;
+  }
+  return true;
 }

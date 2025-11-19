@@ -2,6 +2,16 @@ import { DecodedAppCheckToken } from 'firebase-admin/app-check';
 import { DecodedIdToken } from 'firebase-admin/auth';
 import { Undefinedify } from './_internal/types.js';
 
+/**
+ * Flexible date input accepted by various constructors in this module.
+ *
+ * @remarks
+ * Values are normalized internally to a compatible `Date` repesentation:
+ *
+ * - `Date` → used as-is
+ * - `number` → interpreted as seconds since the Unix epoch
+ * - `string` → parsed as a UTC date/time string
+ */
 export type AuthDateConstructor = Date | number | string;
 
 /**
@@ -213,10 +223,6 @@ export interface MultiFactorConstructor {
 
   /**
    * The date the second factor was enrolled.
-   *
-   * @remarks
-   * Accepts a `Date` instance, seconds from the Unix epoch, or a UTC string.
-   * Values are normalized internally to a `Date`.
    */
   enrollmentTime?: AuthDateConstructor;
 }
@@ -272,19 +278,27 @@ export interface UserConstructor {
   photoURL?: string;
 }
 
+/**
+ * Constructor shape for user metadata fields.
+ *
+ * @remarks
+ * All properties accept {@link AuthDateConstructor} values (for example `Date`,
+ * epoch seconds, or UTC strings) and are normalized internally to canonical
+ * string representations matching Firebase Auth semantics.
+ */
 export interface MetadataConstructor {
   /**
-   * The date the user was created, formatted as a UTC string.
+   * The date the user was created.
    */
   creationTime?: AuthDateConstructor;
+
   /**
-   * The date the user last signed in, formatted as a UTC string.
+   * The date the user last signed in.
    */
   lastSignInTime?: AuthDateConstructor;
+
   /**
-   * The time at which the user was last active (ID token refreshed),
-   * formatted as a UTC Date string (eg 'Sat, 03 Feb 2001 04:05:06 GMT').
-   * Returns null if the user was never active.
+   * The time at which the user was last active (ID token refreshed).
    */
   lastRefreshTime?: AuthDateConstructor | null;
 }
@@ -306,6 +320,13 @@ export interface IdentityConstructor extends UserConstructor {
    */
   disabled?: boolean;
 
+  /**
+   * User metadata associated with this identity.
+   *
+   * @remarks
+   * Values are normalized using {@link MetadataConstructor} semantics and
+   * surfaced on the backing `UserRecord.metadata` structure.
+   */
   metadata?: MetadataConstructor;
 
   /**
@@ -366,6 +387,17 @@ export interface IdentityConstructor extends UserConstructor {
    * Validation is performed by the internal `validatedCustomClaims` helper.
    */
   customClaims?: Record<string, unknown>;
+
+  /**
+   * The date the user's tokens are valid after.
+   *
+   * @remarks
+   * Accepts {@link AuthDateConstructor}. In production, this is updated
+   * every time the user's refresh tokens are revoked either from
+   * `BaseAuth.revokeRefreshTokens()` or by the Firebase Auth backend on
+   * major account changes (password reset, password/email updates, etc.).
+   */
+  tokensValidAfterTime?: AuthDateConstructor;
 }
 
 /**
@@ -650,7 +682,7 @@ export interface AuthContextOptions<TKey extends AuthKey = AuthKey>
    * Issued-at time for the ID token.
    *
    * @remarks
-   * - Accepts seconds since epoch or a `Date`.
+   * - Accepts seconds since epoch, UTC strings, or a `Date`.
    * - Defaults to `now()` when omitted.
    * - Ignored when `key` is not provided (i.e. unauthenticated).
    */
@@ -660,7 +692,7 @@ export interface AuthContextOptions<TKey extends AuthKey = AuthKey>
    * Session authentication time.
    *
    * @remarks
-   * - Accepts seconds since epoch or a `Date`.
+   * - Accepts seconds since epoch, UTC strings, or a `Date`.
    * - Defaults to `iat - 30 minutes` when omitted.
    * - Ignored when `key` is not provided.
    */
@@ -670,7 +702,7 @@ export interface AuthContextOptions<TKey extends AuthKey = AuthKey>
    * Expiration time for the ID token.
    *
    * @remarks
-   * - Accepts seconds since epoch or a `Date`.
+   * - Accepts seconds since epoch, UTC strings, or a `Date`.
    * - Defaults to `iat + 30 minutes` when omitted.
    * - Ignored when `key` is not provided.
    */
@@ -737,6 +769,13 @@ export class SignInProvider {
      * Canonical shortcut type for this provider.
      */
     readonly type: SignInProviderType,
+    /**
+     * Explicit provider ID override.
+     *
+     * @remarks
+     * When omitted, the provider ID is derived from {@link type} via
+     * {@link normalizedProvider}.
+     */
     signInProvider?: string,
     /**
      * Optional user profile seed used when synthesizing provider data.
