@@ -3,18 +3,6 @@ import { DecodedIdToken } from 'firebase-admin/auth';
 import { Undefinedify } from './_internal/types.js';
 
 /**
- * Flexible date input accepted by various constructors in this module.
- *
- * @remarks
- * Values are normalized internally to a compatible `Date` repesentation:
- *
- * - `Date` → used as-is
- * - `number` → interpreted as seconds since the Unix epoch
- * - `string` → parsed as a UTC date/time string
- */
-export type AuthDateConstructor = Date | number | string;
-
-/**
  * Authentication provider metadata embedded inside ID tokens under the
  * reserved `firebase` claim.
  *
@@ -190,6 +178,18 @@ export type SignInProviderType =
  * These correspond to the `factorId` used for MFA enrollments and sign-in.
  */
 export type MultiFactorIdentifier = 'phone' | 'totp';
+
+/**
+ * Flexible date input accepted by various constructors in this module.
+ *
+ * @remarks
+ * Values are normalized internally to a compatible `Date` repesentation:
+ *
+ * - `Date` → used as-is
+ * - `number` → interpreted as seconds since the Unix epoch
+ * - `string` → parsed as a UTC date/time string
+ */
+export type AuthDateConstructor = Date | number | string;
 
 /**
  * Lightweight constructor shape for multi-factor information.
@@ -670,13 +670,18 @@ export interface IdentityOptions {
 export interface AuthContextOptions<TKey extends AuthKey = AuthKey>
   extends IdentityOptions {
   /**
-   * Identity registry key used to resolve the identity from the provider
+   * Identity selector used to resolve the identity from the provider
    * (for example, {@link AuthManager}).
    *
    * @remarks
-   * Omit this to generate an unauthenticated context.
+   * - When a `TKey` value is provided, the provider looks up the identity
+   *   by its registry key (for example, the key passed to
+   *   `AuthManager.register()`).
+   * - When an {@link AltKey} is provided, the identity is resolved using
+   *   an alternate lookup (UID, email, or phone number).
+   * - Omit this to generate an unauthenticated context.
    */
-  key?: TKey;
+  key?: TKey | AltKey;
 
   /**
    * Issued-at time for the ID token.
@@ -721,6 +726,112 @@ export interface AuthContextOptions<TKey extends AuthKey = AuthKey>
 }
 
 /**
+ * Alternate identity lookup types supported by {@link AltKey}.
+ *
+ * @remarks
+ * These correspond to common unique fields on a Firebase Auth user:
+ *
+ * - `'uid'`   → look up by user UID.
+ * - `'email'` → look up by primary email address.
+ * - `'phone'` → look up by primary phone number.
+ */
+export type AltKeyType = 'uid' | 'email' | 'phone';
+
+/**
+ * Alternate key descriptor used to select a registered identity.
+ *
+ * @remarks
+ * Use this when you want to resolve an identity by a stable, user-centric
+ * field (UID, email, or phone number) rather than the registry key used
+ * when registering the identity with {@link AuthManager}.
+ *
+ * Tenant behavior for email/phone:
+ *
+ * - Email and phone lookups are **not global**.
+ * - If `tenantId` is not provided, the {@link AuthManager} will attempt to
+ *   resolve the identity from the default (non-tenanted) context.
+ * - If `tenantId` is provided, resolution is scoped to the specified tenant.
+ *
+ * Typical usage:
+ *
+ * ```ts
+ * // Look up by UID
+ * auth.context({ key: AltKey.uid('some-uid') });
+ *
+ * // Look up by email in the default (non-tenanted) context
+ * auth.context({ key: AltKey.email('alice@example.com') });
+ *
+ * // Look up by email in a specific tenant
+ * auth.context({ key: AltKey.email('alice@example.com', 'tenant-1') });
+ * ```
+ */
+export class AltKey {
+  private constructor(
+    /**
+     * The alternate lookup mode to use when resolving the identity.
+     */
+    readonly type: AltKeyType,
+    /**
+     * The value for the chosen {@link type}.
+     *
+     * @remarks
+     * - For `'uid'`, this is the user UID.
+     * - For `'email'`, this is the primary email address.
+     * - For `'phone'`, this is the primary phone number in E.164 format.
+     */
+    readonly value: string,
+    /**
+     * Optional tenant scope for the lookup.
+     *
+     * @remarks
+     * For email and phone lookups:
+     * - If omitted, the {@link AuthManager} resolves the identity only from
+     *   the default (non-tenanted) context.
+     * - If specified, resolution is restricted to the given tenant.
+     *
+     * This mirrors Identity Platform’s behavior where email/phone uniqueness
+     * is per-tenant rather than global.
+     */
+    readonly tenantId?: string
+  ) {}
+
+  /**
+   * Create an {@link AltKey} that resolves an identity by UID.
+   *
+   * @param uid - The UID to look up.
+   */
+  static uid(uid: string): AltKey {
+    return new AltKey('uid', uid);
+  }
+
+  /**
+   * Create an {@link AltKey} that resolves an identity by email address.
+   *
+   * @param email - The email address to look up.
+   * @param tenantId - Optional tenant ID to scope the lookup.
+   */
+  static email(email: string, tenantId?: string): AltKey {
+    return new AltKey('email', email, tenantId);
+  }
+
+  /**
+   * Create an {@link AltKey} that resolves an identity by phone number.
+   *
+   * @param phone - The phone number (typically E.164) to look up.
+   * @param tenantId - Optional tenant ID to scope the lookup.
+   */
+  static phone(phone: string, tenantId?: string): AltKey {
+    return new AltKey('phone', phone, tenantId);
+  }
+
+  toString(): string {
+    const r = `${this.type}="${this.value}"`;
+
+    return this.tenantId ? `tenantId="${this.tenantId}", ${r}` : r;
+  }
+}
+
+export /**
  * Describes a sign-in provider used when building identities.
  *
  * @remarks
@@ -728,7 +839,7 @@ export interface AuthContextOptions<TKey extends AuthKey = AuthKey>
  * (for example, {@link SignInProvider.Google}, {@link SignInProvider.anonymous},
  * {@link SignInProvider.custom}).
  */
-export class SignInProvider {
+class SignInProvider {
   /** Built-in Apple sign-in provider. */
   static readonly Apple = new SignInProvider('apple');
 

@@ -1,4 +1,5 @@
 export * from './lib/auth-manager.js';
+export * from './lib/auth.js';
 export * from './lib/http/types.js';
 export * from './lib/https/jwt.js';
 export * from './lib/https/types.js';

@@ -1,4 +1,5 @@
 import { DecodedAppCheckToken } from 'firebase-admin/app-check';
+import { authInstanceError } from './_internal/auth-error.js';
 import {
   assignMultiFactors,
   generateEmail,
@@ -37,6 +38,7 @@ import { _HttpsBroker } from './https/_internal/https-broker.js';
 import { formatIss } from './https/_internal/util.js';
 import { HttpsBroker } from './https/types.js';
 import {
+  AltKey,
   AppCheckConstructor,
   AppCheckData,
   AuthContextOptions,
@@ -345,11 +347,11 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    * - Applies multi-factor details based on {@link IdentityOptions.multifactorSelector}.
    * - Copies validated custom claims from the underlying `AuthInstance`.
    */
-  identity(key: TKey, options?: IdentityOptions): MockIdentity {
+  identity(key: TKey | AltKey, options?: IdentityOptions): MockIdentity {
     const ai = this._tenantManager.getByKey(key);
 
     if (ai.disabled)
-      throw new Error(authInstanceError(key, ai.uid, `is disabled`));
+      throw authInstanceError(key, 'user-disabled', ai.uid, `is disabled`);
 
     const identities: Record<string, string[]> = {};
 
@@ -540,14 +542,6 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
 
     return instance;
   }
-}
-
-function identityError(key: AuthKey, msg: string): string {
-  return `Identity error for key "${key}". ${msg}.`;
-}
-
-function authInstanceError(key: AuthKey, uid: string, msg: string): string {
-  return identityError(key, `Identity with uid ${uid} ${msg}.`);
 }
 
 function ensureArray<T>(input: T | T[]): T[] {

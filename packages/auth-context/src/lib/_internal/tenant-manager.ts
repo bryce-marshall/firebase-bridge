@@ -4,12 +4,13 @@ import {
   UserImportRecord,
   UserRecord,
 } from 'firebase-admin/auth';
+import { AltKey, AuthKey } from '../types.js';
 import {
   authError,
+  identityError,
   uidExistsError,
   userNotFoundError,
 } from './auth-error.js';
-import { AuthKey } from '../types.js';
 import {
   assignMultiFactors,
   base64PasswordHash,
@@ -253,7 +254,7 @@ export class TenantManager<TKey extends AuthKey> {
    */
   register(key: TKey, ai: AuthInstance): void {
     if (this._defaults.has(key))
-      throw new Error(identityError(key, 'Already registered'));
+      throw identityError(key, 'operation-not-allowed', 'Already registered');
 
     if (this._global.has(ai.uid)) throw uidExistsError(ai.uid);
 
@@ -343,14 +344,54 @@ export class TenantManager<TKey extends AuthKey> {
    * @returns The active {@link AuthInstance} corresponding to the registered key.
    * @throws {@link Error} if the key is not registered or the instance is missing.
    */
-  getByKey(key: TKey): AuthInstance {
-    const uid = this._defaults.get(key)?.uid;
+  getByKey(key: TKey | AltKey): AuthInstance {
+    let ai: AuthInstance | undefined;
+    if (key instanceof AltKey) {
+      if (!key.value) {
+        throw identityError(
+          key,
+          'invalid-argument',
+          `AltKey has missing or invalid ${key.type}.`
+        );
+      }
 
-    if (uid == undefined) throw new Error(identityError(key, 'Not registered'));
+      let p: AuthInstancePredicate;
+      switch (key.type) {
+        case 'email':
+          p = (ai) => ai.email === key.value;
+          break;
 
-    const ai = this._global.get(uid);
+        case 'phone':
+          p = (ai) => ai.phoneNumber === key.value;
+          break;
+
+        case 'uid':
+          p = (ai) => ai.uid === key.value;
+          break;
+
+        default:
+          throw identityError(
+            key,
+            'invalid-argument',
+            `Unrecognised AltKey type "${key.type}".`
+          );
+      }
+      ai = this.find(key.tenantId, p);
+    } else {
+      const uid = this._defaults.get(key)?.uid;
+
+      if (uid == undefined)
+        throw identityError(
+          key,
+          'user-not-found',
+          'Not registered with AuthManager'
+        );
+
+      ai = this._global.get(uid);
+    }
+
     if (ai == undefined)
-      throw new Error(authInstanceError(key, uid, `has been deleted`));
+      throw identityError(key, 'user-not-found', 'User not found');
 
     return ai;
   }
@@ -554,30 +595,6 @@ export class TenantManager<TKey extends AuthKey> {
       ai.passwordSalt = base64PasswordSalt();
     }
   }
-}
-
-/**
- * Formats an error message describing a problem with a registered identity key.
- *
- * @param key - Identity key involved in the error.
- * @param msg - Human-readable description of the error.
- * @returns A formatted error message string.
- */
-function identityError(key: AuthKey, msg: string): string {
-  return `Identity error for key "${key}". ${msg}.`;
-}
-
-/**
- * Formats an error message describing a problem with an {@link AuthInstance}
- * associated with a particular identity key.
- *
- * @param key - Identity key involved in the error.
- * @param uid - UID associated with the identity.
- * @param msg - Human-readable description of the error.
- * @returns A formatted error message string.
- */
-function authInstanceError(key: AuthKey, uid: string, msg: string): string {
-  return identityError(key, `Identity with uid ${uid} ${msg}.`);
 }
 
 /**

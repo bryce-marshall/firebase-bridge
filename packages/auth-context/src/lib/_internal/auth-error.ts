@@ -1,4 +1,5 @@
 import { FirebaseError } from 'firebase-admin';
+import { AltKey, AuthKey } from '../types.js';
 import { applyToJSON } from './auth-helpers.js';
 
 /**
@@ -167,4 +168,42 @@ export function asAuthError(e: unknown): FirebaseError {
  */
 export function isFirebaseError(e: unknown): e is FirebaseError {
   return (e as FirebaseError)?.code != undefined;
+}
+
+/**
+ * Formats an error message describing a problem with a registered identity key.
+ *
+ * @param key - Identity key involved in the error.
+ * @param msg - Human-readable description of the error.
+ * @returns A formatted error message string.
+ */
+export function identityError(
+  key: AuthKey | AltKey,
+  code: AuthErrorCode,
+  msg: string
+): FirebaseError {
+  return authError(
+    code,
+    `Identity error for ${
+      key instanceof AltKey ? key.toString() : `key "${key}"`
+    }. ${msg}.`
+  );
+}
+
+/**
+ * Formats an error message describing a problem with an {@link AuthInstance}
+ * associated with a particular identity key.
+ *
+ * @param key - Identity key involved in the error.
+ * @param uid - UID associated with the identity.
+ * @param msg - Human-readable description of the error.
+ * @returns A formatted error message string.
+ */
+export function authInstanceError(
+  key: AuthKey | AltKey,
+  code: AuthErrorCode,
+  uid: string,
+  msg: string
+): FirebaseError {
+  return identityError(key, code, `Identity with uid ${uid} ${msg}.`);
 }
