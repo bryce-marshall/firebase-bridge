@@ -5,10 +5,10 @@ import { cloneDeep, defaultString } from '../../_internal/util.js';
 import {
   CloudFunctionsParsedBody,
   HttpRequestOptions,
-} from '../../http/types.js';
+} from '../../http/http-types.js';
 import { AuthKey } from '../../types.js';
 import { encodeAppCheckToken, encodeIdToken } from '../jwt.js';
-import { CloudFunctionRequestBase } from '../types.js';
+import { CloudFunctionRequestBase } from '../https-types.js';
 import { HeaderKey } from './util.js';
 
 const CONTENT_TYPE_JSON = 'application/json';

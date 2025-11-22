@@ -1,12 +1,15 @@
 import {
   CloudFunctionsParsedBody,
   MockHttpResponse,
-} from '../../lib/http/types.js';
+} from '../../lib/http/http-types.js';
 import {
   CallableFunctionRequest,
   RawHttpRequest,
-} from '../../lib/https/types.js';
-import { TestIdentity, TestManager } from '../_helpers/test-manager.js';
+} from '../../lib/https/https-types.js';
+import {
+  TestAuthManager,
+  TestIdentity,
+} from '../_helpers/test-auth-manager.js';
 import {
   CommonCallableHandler,
   CommonRequestHandler,
@@ -15,7 +18,7 @@ import {
 import { runHttpsCommonSuites } from '../common/https-common.suite.js';
 
 class V1Runner implements TestRunner {
-  readonly manager = new TestManager();
+  readonly manager = new TestAuthManager();
   onCall<
     TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody,
     TResponse extends CloudFunctionsParsedBody = CloudFunctionsParsedBody

@@ -8,13 +8,13 @@ import {
   CloudFunctionsParsedBody,
   HttpRequestOptions,
   MockHttpResponse,
-} from '../../http/types.js';
+} from '../../http/http-types.js';
 import {
   AuthenticatedRequestContext,
   AuthKey,
   UnauthenticatedRequestContext,
 } from '../../types.js';
-import { CallableFunctionRequest, RawHttpRequest } from '../types.js';
+import { CallableFunctionRequest, RawHttpRequest } from '../https-types.js';
 import {
   CallableHandlerV1,
   HttpsV1Handler,

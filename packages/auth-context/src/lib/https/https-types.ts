@@ -2,7 +2,7 @@ import {
   CloudFunctionsParsedBody,
   HttpHeaders,
   HttpRequestOptions,
-} from '../http/types.js';
+} from '../http/http-types.js';
 import { AuthContextOptions, AuthKey } from '../types.js';
 import { HttpsV1Handler } from './v1-types.js';
 import { HttpsV2Handler } from './v2-types.js';

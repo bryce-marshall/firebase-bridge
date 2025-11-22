@@ -237,6 +237,7 @@ Run the Nx build targets or package scripts to generate both ESM and CJS outputs
 ```bash
 npx nx run firestore-admin:build
 npx nx run firestore-functions:build
+npx nx run auth-context:build
 ```
 
 ### 3. Sanity check before publishing

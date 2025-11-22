@@ -1,6 +1,6 @@
 import { AuthProvider } from '../../_internal/types.js';
 import { AuthKey } from '../../types.js';
-import { HttpsBroker } from '../types.js';
+import { HttpsBroker } from '../https-types.js';
 import { HttpsV1Handler } from '../v1-types.js';
 import { HttpsV2Handler } from '../v2-types.js';
 import { _HttpsV1Handler } from './https-v1-handler.js';

@@ -1,6 +1,7 @@
 import { FirebaseError } from 'firebase-admin';
 import { AltKey, AuthKey } from '../types.js';
 import { applyToJSON } from './auth-helpers.js';
+import { isValidE164Phone, isValidEmail } from './util.js';
 
 /**
  * The set of possible Auth error codes.
@@ -206,4 +207,39 @@ export function authInstanceError(
   msg: string
 ): FirebaseError {
   return identityError(key, code, `Identity with uid ${uid} ${msg}.`);
+}
+
+/**
+ * Validates an email address and returns it if valid.
+ *
+ * @param email - Email address to validate, or `null`/`undefined`.
+ * @returns The email address if valid; otherwise `undefined` when not provided.
+ * @throws {@link FirebaseError} If the email is present but not valid.
+ */
+export function assertEmail(
+  email: string | null | undefined
+): string | undefined {
+  if (!email) return undefined;
+  if (isValidEmail(email)) return email;
+
+  throw authError('invalid-email', `"${email}" is not a valid email address.`);
+}
+
+/**
+ * Validates an E.164-formatted phone number and returns it if valid.
+ *
+ * @param phoneNumber - Phone number to validate, or `null`/`undefined`.
+ * @returns The phone number if valid; otherwise `undefined` when not provided.
+ * @throws {@link FirebaseError} If the phone number is present but not valid.
+ */
+export function assertPhone(
+  phoneNumber: string | null | undefined
+): string | undefined {
+  if (!phoneNumber) return undefined;
+  if (isValidE164Phone(phoneNumber)) return phoneNumber;
+
+  throw authError(
+    'invalid-phone-number',
+    `"${phoneNumber}" is not a valid E.164 phone number.`
+  );
 }

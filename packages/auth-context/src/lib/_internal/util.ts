@@ -486,3 +486,128 @@ export function assignIfOrDeleteNull<T extends object, K extends keyof T>(
   }
   return true;
 }
+
+/**
+ * Checks whether the provided value appears to be a valid email address.
+ *
+ * @remarks
+ * This helper performs a pragmatic validation suitable for most application-level
+ * checks. It does **not** attempt to fully implement RFC 5322, but it enforces:
+ *
+ * - Non-empty value after trimming.
+ * - No spaces.
+ * - At most 320 characters in total.
+ * - Exactly one `@` symbol.
+ * - Non-empty local part and domain.
+ * - Domain contains at least one `.` (for example, `example.com`).
+ * - Domain consists of dot-separated labels using letters, digits, or hyphens,
+ *   with no empty labels and no labels starting or ending with `-`.
+ *
+ * `null` and `undefined` are treated as invalid and return `false`.
+ *
+ * @param email - Email address to validate.
+ * @returns `true` if the value looks like a valid email address; otherwise `false`.
+ *
+ * @example
+ * ```ts
+ * isValidEmail('alice@example.com');      // true
+ * isValidEmail('alice.smith@sub.example.com'); // true
+ * isValidEmail('not-an-email');          // false
+ * isValidEmail('foo@bar');               // false
+ * isValidEmail(null);                    // false
+ * ```
+ */
+export function isValidEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+
+  const value = email.trim();
+  if (!value) return false;
+
+  // Basic length guard (common practical limit: 320 characters total).
+  if (value.length > 320) return false;
+
+  // Must contain exactly one '@'.
+  const atIndex = value.indexOf('@');
+  if (atIndex <= 0 || atIndex === value.length - 1) return false;
+  if (value.indexOf('@', atIndex + 1) !== -1) return false;
+
+  // No spaces allowed.
+  if (value.indexOf(' ') !== -1) return false;
+
+  const localPart = value.slice(0, atIndex);
+  const domain = value.slice(atIndex + 1);
+
+  if (!localPart || !domain) return false;
+
+  // Domain must contain at least one dot and not start or end with a dot.
+  if (!domain.includes('.') || domain.startsWith('.') || domain.endsWith('.')) {
+    return false;
+  }
+
+  const domainLabels = domain.split('.');
+  if (domainLabels.some((label) => !label)) {
+    // Empty label (e.g., "example..com")
+    return false;
+  }
+
+  // Local part: reasonably permissive, but exclude obvious invalid characters.
+  const localPattern = /^[^"(),:;<>@[\\\]\s]+$/;
+  if (!localPattern.test(localPart)) return false;
+
+  // Domain labels: letters, digits, hyphens; no leading/trailing hyphen.
+  const domainLabelPattern = /^[A-Za-z0-9-]+$/;
+  if (
+    !domainLabels.every(
+      (label) =>
+        domainLabelPattern.test(label) &&
+        !label.startsWith('-') &&
+        !label.endsWith('-')
+    )
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Tests whether a string is a valid E.164-formatted phone number.
+ *
+ * @remarks
+ * E.164 numbers:
+ *
+ * - Start with a `'+'` sign.
+ * - Are followed by a country code and subscriber number.
+ * - Contain only digits after the `'+'`.
+ * - Have a maximum of 15 digits in total.
+ * - Do not start with a leading zero after the `'+'` (i.e. country code
+ *   must be `1–9`).
+ *
+ * This function only validates the **format** of the number. It does not
+ * check whether the number is actually assigned or reachable.
+ *
+ * `null` and `undefined` are treated as invalid and return `false`.
+ *
+ * @param phoneNumber - Phone number to validate.
+ * @returns `true` if the value is a syntactically valid E.164 number; otherwise `false`.
+ *
+ * @example
+ * ```ts
+ * isValidE164Phone('+15551234567');   // true
+ * isValidE164Phone('+64211234567');   // true (NZ mobile example)
+ * isValidE164Phone('5551234567');     // false (missing '+')
+ * isValidE164Phone('+0123456789');    // false (country code cannot start with 0)
+ * isValidE164Phone(null);            // false
+ * ```
+ */
+export function isValidE164Phone(
+  phoneNumber: string | null | undefined
+): boolean {
+  if (!phoneNumber) return false;
+
+  const value = phoneNumber.trim();
+  if (!value) return false;
+
+  // E.164: '+' followed by 1–15 digits, first digit 1–9.
+  return /^\+[1-9]\d{1,14}$/.test(value);
+}

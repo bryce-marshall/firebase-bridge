@@ -1,5 +1,12 @@
+import { App } from 'firebase-admin/app';
 import { DecodedAppCheckToken } from 'firebase-admin/app-check';
-import { authInstanceError } from './_internal/auth-error.js';
+import { Auth, DecodedIdToken } from 'firebase-admin/auth';
+import {
+  assertEmail,
+  assertPhone,
+  authError,
+  authInstanceError,
+} from './_internal/auth-error.js';
 import {
   assignMultiFactors,
   generateEmail,
@@ -12,7 +19,7 @@ import {
   IUserMetadata,
   PersistedUserInfo,
 } from './_internal/auth-types.js';
-import { TenantManager } from './_internal/tenant-manager.js';
+import { InternalTenantManager } from './_internal/tenant-manager.js';
 import {
   AuthProvider,
   DEFAULT_PROJECT_ID,
@@ -33,10 +40,10 @@ import {
   userId,
   utcDate,
 } from './_internal/util.js';
-import { Auth } from './auth.js';
+import { Auth as _Auth } from './auth.js';
 import { _HttpsBroker } from './https/_internal/https-broker.js';
-import { formatIss } from './https/_internal/util.js';
-import { HttpsBroker } from './https/types.js';
+import { buildAuthData, formatIss } from './https/_internal/util.js';
+import { HttpsBroker } from './https/https-types.js';
 import {
   AltKey,
   AppCheckConstructor,
@@ -44,6 +51,7 @@ import {
   AuthContextOptions,
   AuthenticatedRequestContext,
   AuthKey,
+  AuthTokenOptions,
   IdentityConstructor,
   IdentityOptions,
   MockIdentity,
@@ -108,6 +116,11 @@ export interface AuthManagerOptions {
    * Defaults to `'nam5'`.
    */
   region?: string;
+  /**
+   * If required, an `App` definition to apply to the `Auth` mock.
+   * If `app` is not provided, a default will be generated.
+   */
+  app?: App;
 }
 
 /**
@@ -126,7 +139,7 @@ export interface AuthManagerOptions {
 export class AuthManager<TKey extends AuthKey = AuthKey>
   implements AuthProvider<TKey>
 {
-  private _tenantManager: TenantManager<TKey>;
+  private _tenantManager: InternalTenantManager<TKey>;
 
   /**
    * Firebase App ID used for App Check tokens (`sub`, `app_id`).
@@ -177,14 +190,16 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    * @param options - Optional initialization overrides. See {@link AuthManagerOptions}.
    */
   constructor(options?: AuthManagerOptions) {
-    this._tenantManager = new TenantManager(options?.now ?? (() => Date.now()));
+    this._tenantManager = new InternalTenantManager(
+      options?.now ?? (() => Date.now())
+    );
     this.projectNumber = options?.projectNumber ?? projectNumber();
     this.appId = options?.appId ?? appId(this.projectNumber);
     this.projectId = options?.projectId ?? DEFAULT_PROJECT_ID;
     this.region = options?.region ?? DEFAULT_REGION;
     this.iss = formatIss(this.projectNumber);
     this.https = new _HttpsBroker(this);
-    this.auth = new Auth(this._tenantManager);
+    this.auth = new _Auth(this._tenantManager) as unknown as Auth;
   }
 
   /**
@@ -209,6 +224,13 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
   }
 
   /**
+   * Returns the current time according to the instance's configured or default time provider
+   */
+  now(): Date {
+    return new Date(this._tenantManager.now());
+  }
+
+  /**
    * Deregister a previously registered identity.
    *
    * @param key - Registry key to remove.
@@ -220,6 +242,26 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
    */
   deregister(key: TKey): boolean {
     return this._tenantManager.deregister(key);
+  }
+
+  /**
+   * Reset mutable identity instances back to their registered defaults.
+   *
+   * @remarks
+   * - Clears the internal instance map and re-clones all registered defaults.
+   * - Does **not** remove registered identities; use {@link deregister} for that.
+   * - Useful between tests to discard mutations from Admin SDK calls
+   *   (`updateUser`, etc.) while keeping the registry intact.
+   */
+  reset(): void {
+    this._tenantManager.reset();
+  }
+
+  /**
+   * Clears all state, including registered identities.
+   */
+  clear(): void {
+    this._tenantManager.clear();
   }
 
   /**
@@ -279,57 +321,6 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
   }
 
   /**
-   * Reset mutable identity instances back to their registered defaults.
-   *
-   * @remarks
-   * - Clears the internal instance map and re-clones all registered defaults.
-   * - Does **not** remove registered identities; use {@link deregister} for that.
-   * - Useful between tests to discard mutations from Admin SDK calls
-   *   (`updateUser`, etc.) while keeping the registry intact.
-   */
-  reset(): void {
-    this._tenantManager.reset();
-  }
-
-  /**
-   * Synthesize an App Check payload from optional constructor values.
-   *
-   * @param c - Optional seed object containing explicit `iat`/`exp` or custom claims.
-   * @returns A normalized {@link AppCheckData} ready to attach to a request context.
-   *
-   * @remarks
-   * - Always enforces this manager’s `appId`, `aud`, and `iss`.
-   * - Defaults to a 60-minute validity window when times are not provided.
-   * - Preserves arbitrary additional properties on the token.
-   */
-  protected appCheck(c?: AppCheckConstructor | undefined): AppCheckData {
-    // Clone the constructor to capture any arbitrary key/value pairs.
-    const token = (c ? cloneDeep(c) : {}) as DecodedAppCheckToken;
-    // Remove the AppCheckConstructor-specific property
-    delete token.alreadyConsumed;
-    // We don't allow overriding of these properties
-    token.sub = this.appId;
-    token.app_id = this.appId;
-    token.aud = [this.projectNumber, this.projectId];
-    token.iss = this.iss;
-    // exp and iat may be overriden. Synthesize if not.
-    token.exp = epochSeconds(
-      c?.exp ?? this._tenantManager.epoch() + EPOCH_MINUTES_60
-    );
-    token.iat = epochSeconds(c?.iat ?? token.exp - EPOCH_MINUTES_60);
-    // All other arbitrary values were cloned from the AppCheckConstructor
-
-    const r: AppCheckData = {
-      appId: token.app_id,
-      token,
-    };
-
-    assignIf(r, 'alreadyConsumed', c?.alreadyConsumed);
-
-    return r;
-  }
-
-  /**
    * Resolve a normalized {@link MockIdentity} for the given registry key.
    *
    * @param key - Registry key for the identity.
@@ -359,7 +350,7 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
       if (!value) return;
       const array = identities[key];
       if (array) {
-        array.push(value);
+        if (!array.find((s) => s === value)) array.push(value);
       } else {
         identities[key] = [value];
       }
@@ -420,6 +411,64 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
     return id;
   }
 
+  /**
+   * Synthesize a `DecodedIdToken` from constructor values.
+   *
+   * @param options - object containing a key to resolve the authenticated identity,
+   * and optionally explicit `iat`/`exp` etc.
+   * @returns A synthesized {@link DecodedIdToken}.
+   */
+  token(options: AuthTokenOptions<TKey>): DecodedIdToken {
+    const context = this.context(options);
+
+    const token = buildAuthData(context)?.token;
+    if (!token)
+      throw authError(
+        'operation-not-allowed',
+        'Must be an authenticated context.'
+      );
+
+    return token;
+  }
+
+  /**
+   * Synthesize an App Check payload from optional constructor values.
+   *
+   * @param c - Optional seed object containing explicit `iat`/`exp` or custom claims.
+   * @returns A normalized {@link AppCheckData} ready to attach to a request context.
+   *
+   * @remarks
+   * - Always enforces this manager’s `appId`, `aud`, and `iss`.
+   * - Defaults to a 60-minute validity window when times are not provided.
+   * - Preserves arbitrary additional properties on the token.
+   */
+  appCheck(c?: AppCheckConstructor | undefined): AppCheckData {
+    // Clone the constructor to capture any arbitrary key/value pairs.
+    const token = (c ? cloneDeep(c) : {}) as DecodedAppCheckToken;
+    // Remove the AppCheckConstructor-specific property
+    delete token.alreadyConsumed;
+    // We don't allow overriding of these properties
+    token.sub = this.appId;
+    token.app_id = this.appId;
+    token.aud = [this.projectNumber, this.projectId];
+    token.iss = this.iss;
+    // exp and iat may be overriden. Synthesize if not.
+    token.exp = epochSeconds(
+      c?.exp ?? this._tenantManager.epoch() + EPOCH_MINUTES_60
+    );
+    token.iat = epochSeconds(c?.iat ?? token.exp - EPOCH_MINUTES_60);
+    // All other arbitrary values were cloned from the AppCheckConstructor
+
+    const r: AppCheckData = {
+      appId: token.app_id,
+      token,
+    };
+
+    assignIf(r, 'alreadyConsumed', c?.alreadyConsumed);
+
+    return r;
+  }
+
   private authInstance(c: IdentityConstructor): AuthInstance {
     const userMeta = (): IUserMetadata => {
       const meta = c.metadata;
@@ -463,8 +512,8 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
     function applyUserInfo(ui: PersistedUserInfo): void {
       if (!c.suppressProviderDefaults) {
         assignDefer(instance, 'displayName', ui.displayName);
-        assignDefer(instance, 'email', ui.email);
-        assignDefer(instance, 'phoneNumber', ui.phoneNumber);
+        assignDefer(instance, 'email', assertEmail(ui.email));
+        assignDefer(instance, 'phoneNumber', assertPhone(ui.phoneNumber));
         assignDefer(instance, 'photoURL', ui.photoURL);
       }
     }
@@ -492,8 +541,9 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
         userInfo[ui.providerId] = ui;
         let hasId = false;
         if (data) {
-          hasId = assignIf(ui, 'email', data.email) || hasId;
-          hasId = assignIf(ui, 'phoneNumber', data.phoneNumber) || hasId;
+          hasId = assignIf(ui, 'email', assertEmail(data.email)) || hasId;
+          hasId =
+            assignIf(ui, 'phoneNumber', assertPhone(data.phoneNumber)) || hasId;
           assignIf(ui, 'displayName', data?.displayName);
           assignIf(ui, 'photoURL', data.photoURL);
         }
@@ -530,9 +580,14 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
 
     // Explicit identity values override implicit provider values.
     assignIf(instance, 'displayName', c.displayName);
-    assignIf(instance, 'email', c.email);
-    assignIf(instance, 'emailVerified', c.emailVerified ?? false);
-    assignIf(instance, 'phoneNumber', c.phoneNumber);
+    assignIf(instance, 'email', assertEmail(c.email));
+    // If email is assigned, default to verified unless explicitly overriden
+    assignIf(
+      instance,
+      'emailVerified',
+      c.emailVerified ?? instance.email ? true : undefined
+    );
+    assignIf(instance, 'phoneNumber', assertPhone(c.phoneNumber));
     assignIf(instance, 'photoURL', c.photoURL);
     assignIf(instance, 'tenantId', c.tenantId);
 

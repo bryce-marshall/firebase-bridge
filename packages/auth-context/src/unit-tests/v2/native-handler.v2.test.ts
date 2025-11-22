@@ -1,7 +1,10 @@
 import type { CallableRequest } from 'firebase-functions/v2/https';
 import { onCall, onRequest } from 'firebase-functions/v2/https';
 import { RequestHandlerV2 } from '../../lib/https/v2-types.js';
-import { TestIdentity, TestManager } from '../_helpers/test-manager.js';
+import {
+  TestAuthManager,
+  TestIdentity,
+} from '../_helpers/test-auth-manager.js';
 
 const INPUT_VALUE = 1234567;
 const EXPECTED_OUTPUT_VALUE = 'application/json';
@@ -56,7 +59,7 @@ const onRequestHandlerV2Promise = onRequest((req, res): Promise<void> => {
 });
 
 describe('AuthManager native handlers (v2)', () => {
-  const auth = new TestManager();
+  const auth = new TestAuthManager();
 
   async function testOnCallV2(handler: typeof onCallHandlerV2): Promise<void> {
     const result = await auth.https.v2.runCallable(

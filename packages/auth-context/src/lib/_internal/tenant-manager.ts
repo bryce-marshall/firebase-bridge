@@ -2,10 +2,13 @@ import {
   CreateRequest,
   UpdateRequest,
   UserImportRecord,
+  UserProvider,
   UserRecord,
 } from 'firebase-admin/auth';
 import { AltKey, AuthKey } from '../types.js';
 import {
+  assertEmail,
+  assertPhone,
   authError,
   identityError,
   uidExistsError,
@@ -29,6 +32,7 @@ import {
   resolvePromise,
   userId,
 } from './util.js';
+import { App } from 'firebase-admin/app';
 
 /**
  * Predicate used to filter {@link AuthInstance} entries in the internal user store.
@@ -50,11 +54,13 @@ export type AuthInstancePredicate = (ai: AuthInstance) => boolean;
  *
  * @typeParam TKey - Application-specific key type used to register default identities.
  */
-export class TenantManager<TKey extends AuthKey> {
+export class InternalTenantManager<TKey extends AuthKey> {
   private _defaults = new Map<TKey, AuthInstance>();
   private _global = new Map<string, AuthInstance>();
   private _tenants = new Map<string, Map<string, AuthInstance>>();
   private _tenantScoped = new Map<string, Map<string, unknown>>();
+
+  readonly app: App;
 
   /**
    * Creates a new tenant manager.
@@ -63,7 +69,12 @@ export class TenantManager<TKey extends AuthKey> {
    * since the Unix epoch. Used for metadata fields such as `creationTime`
    * and `lastSignInTime`.
    */
-  constructor(readonly now: () => number) {}
+  constructor(readonly now: () => number, app?: App) {
+    this.app = app ?? {
+      name: 'default-app',
+      options: {},
+    };
+  }
 
   /**
    * Gets the current time according to the configured {@link now} generator,
@@ -103,6 +114,17 @@ export class TenantManager<TKey extends AuthKey> {
   }
 
   /**
+   * Clears all state.
+   *
+   * @remarks
+   * - Clears the default, global, tenant, and tenant-scoped stores.
+   */
+  clear(): void {
+    this._defaults.clear();
+    this.reset();
+  }
+
+  /**
    * Creates a new user in the specified tenant.
    *
    * @remarks
@@ -124,7 +146,7 @@ export class TenantManager<TKey extends AuthKey> {
 
     try {
       const ai = this.initInstance(tenantId, uid);
-      this.assignUpdateRequest(ai, properties);
+      this.assignUpdateRequest(ai, properties, true);
       this._global.set(uid, ai);
       this.getTenantStore(tenantId).set(uid, ai);
 
@@ -159,7 +181,7 @@ export class TenantManager<TKey extends AuthKey> {
     if (!ai) return rejectPromise(userNotFoundError({ uid }));
 
     try {
-      this.assignUpdateRequest(ai, properties);
+      this.assignUpdateRequest(ai, properties, false);
 
       return resolvePromise(toUserRecord(ai));
     } catch (e) {
@@ -182,7 +204,7 @@ export class TenantManager<TKey extends AuthKey> {
    */
   import(tenantId: string | null | undefined, user: UserImportRecord): void {
     const ai = this.initInstance(tenantId, user.uid);
-    this.assignUpdateRequest(ai, user);
+    this.assignUpdateRequest(ai, user, false);
 
     if (user.customClaims) {
       ai.claims = validatedCustomClaims(user.customClaims);
@@ -202,23 +224,7 @@ export class TenantManager<TKey extends AuthKey> {
     }
 
     assignMultiFactors(ai, user.multiFactor?.enrolledFactors);
-
-    if (user.providerData?.length) {
-      for (const pd of user.providerData) {
-        if (!pd) continue;
-
-        const ui: PersistedUserInfo = {
-          uid: pd.uid,
-          providerId: pd.providerId,
-        };
-        assignIf(ui, 'displayName', pd.displayName);
-        assignIf(ui, 'email', pd.email);
-        assignIf(ui, 'phoneNumber', pd.phoneNumber);
-        assignIf(ui, 'photoURL', pd.photoURL);
-        ai.userInfo[ui.providerId] = ui;
-      }
-    }
-
+    assignProviders(ai, user.providerData);
     this._global.set(ai.uid, ai);
     this.getTenantStore(tenantId).set(ai.uid, ai);
   }
@@ -566,7 +572,8 @@ export class TenantManager<TKey extends AuthKey> {
    */
   private assignUpdateRequest(
     ai: AuthInstance,
-    properties: UpdateRequest
+    properties: UpdateRequest,
+    isCreate: boolean
   ): void {
     const uid = ai.uid;
     if (
@@ -583,9 +590,13 @@ export class TenantManager<TKey extends AuthKey> {
       throw authError('phone-number-already-exists');
     }
 
-    assignIf(ai, 'emailVerified', properties.emailVerified);
-    assignIfOrDeleteNull(ai, 'email', properties.email);
-    assignIfOrDeleteNull(ai, 'phoneNumber', properties.phoneNumber);
+    assignIf(ai, 'emailVerified', properties.emailVerified ?? isCreate ? false : undefined);
+    assignIfOrDeleteNull(ai, 'email', assertEmail(properties.email));
+    assignIfOrDeleteNull(
+      ai,
+      'phoneNumber',
+      assertPhone(properties.phoneNumber)
+    );
     assignIfOrDeleteNull(ai, 'displayName', properties.displayName);
     assignIfOrDeleteNull(ai, 'photoURL', properties.photoURL);
     assignIf(ai, 'disabled', properties.disabled);
@@ -593,6 +604,17 @@ export class TenantManager<TKey extends AuthKey> {
     if (properties.password !== undefined) {
       ai.passwordHash = base64PasswordHash(properties.password);
       ai.passwordSalt = base64PasswordSalt();
+    }
+
+    if (properties.providerToLink) {
+      if (!isCreate) {
+        assignProviders(ai, properties.providerToLink);
+      } else {
+        console.warn(
+          'The `providersToLink` property is not supported by the Firebase admin SDK `auth.createUser()` method. Ignoring.' +
+            '\r\nSee https://github.com/firebase/firebase-admin-node/issues/2450'
+        );
+      }
     }
   }
 }
@@ -621,4 +643,34 @@ function ensureStore<T>(
   }
 
   return store;
+}
+
+function assignProviders(
+  ai: AuthInstance,
+  providers: UserProvider | UserProvider[] | null | undefined
+): void {
+  if (!providers) return;
+  if (!Array.isArray(providers)) {
+    providers = [providers];
+  }
+
+  for (const pd of providers) {
+    if (!pd) continue;
+
+    const uid = pd.uid;
+    if (!uid) throw authError('invalid-uid', 'uid is required');
+    const providerId = pd.providerId;
+    if (!providerId)
+      throw authError('invalid-provider-id', 'providerId is required');
+
+    const ui: PersistedUserInfo = {
+      uid,
+      providerId,
+    };
+    assignIf(ui, 'displayName', pd.displayName);
+    assignIf(ui, 'email', assertEmail(pd.email));
+    assignIf(ui, 'phoneNumber', assertPhone(pd.phoneNumber));
+    assignIf(ui, 'photoURL', pd.photoURL);
+    ai.userInfo[ui.providerId] = ui;
+  }
 }

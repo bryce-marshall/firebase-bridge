@@ -1,6 +1,9 @@
 import { HttpsFunction, Runnable, runWith } from 'firebase-functions/v1';
 import { RequestHandlerV1 } from '../../lib/https/v1-types.js';
-import { TestIdentity, TestManager } from '../_helpers/test-manager.js';
+import {
+  TestAuthManager,
+  TestIdentity,
+} from '../_helpers/test-auth-manager.js';
 
 const INPUT_VALUE = 1234567;
 const EXPECTED_OUTPUT_VALUE = 'application/json';
@@ -50,7 +53,7 @@ const onRequestHandlerPromise = runWith({}).https.onRequest(
 );
 
 describe('AuthManager native handlers (v1)', () => {
-  const auth = new TestManager();
+  const auth = new TestAuthManager();
 
   async function testOnCall(
     handler: HttpsFunction & Runnable<InputData>

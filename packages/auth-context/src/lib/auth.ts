@@ -4,15 +4,24 @@ import {
   AuthProviderConfig,
   AuthProviderConfigFilter,
   CreateRequest,
+  CreateTenantRequest,
   DecodedAuthBlockingToken,
   DecodedIdToken,
   DeleteUsersResult,
   GetUsersResult,
   ListProviderConfigResults,
+  ListTenantsResult,
   ListUsersResult,
+  ProjectConfig,
+  ProjectConfigManager,
   SessionCookieOptions,
+  Tenant,
+  TenantAwareAuth,
+  TenantManager,
   UpdateAuthProviderRequest,
+  UpdateProjectConfigRequest,
   UpdateRequest,
+  UpdateTenantRequest,
   UserIdentifier,
   UserImportOptions,
   UserImportRecord,
@@ -40,12 +49,13 @@ import {
 } from './_internal/util.js';
 import { decodeIdToken, encodeIdToken, encodeJWT } from './https/jwt.js';
 
+import { App } from 'firebase-admin/app';
 import {
   asAuthError,
   authError,
   userNotFoundError,
 } from './_internal/auth-error.js';
-import { TenantManager } from './_internal/tenant-manager.js';
+import { InternalTenantManager } from './_internal/tenant-manager.js';
 import { AuthKey } from './types.js';
 
 /**
@@ -54,7 +64,7 @@ import { AuthKey } from './types.js';
  * @remarks
  * This class encapsulates common behaviour for both project-wide and
  * tenant-aware auth instances. It delegates all user storage to
- * {@link TenantManager}, and focuses on reproducing the
+ * {@link InternalTenantManager}, and focuses on reproducing the
  * behaviour of:
  *
  * - Custom token creation and verification
@@ -73,16 +83,25 @@ export abstract class BaseAuth implements IAuth {
   /**
    * Creates a new base auth instance backed by a shared tenant manager.
    *
-   * @param tenants - Shared {@link TenantManager} responsible for
+   * @param tenants - Shared {@link InternalTenantManager} responsible for
    * user and provider state.
    * @param tenantId - Optional tenant identifier to scope all operations,
    * or `undefined` for project-wide (non-tenant) scope.
    */
   constructor(
-    protected readonly tenants: TenantManager<AuthKey>,
+    protected readonly tenants: InternalTenantManager<AuthKey>,
     tenantId?: string | undefined
   ) {
     this._tenantId = tenantId;
+  }
+
+  /**
+   * Returns the app associated with this Auth instance.
+   *
+   * @returns The app associated with this Auth instance.
+   */
+  get app(): App {
+    return this.tenants.app;
   }
 
   /**
@@ -899,21 +918,18 @@ export class Auth extends BaseAuth {
   /**
    * Creates a new project-wide auth instance.
    *
-   * @param tenants - Shared {@link TenantManager} for managing users
+   * @param tenants - Shared {@link InternalTenantManager} for managing users
    * and provider configs across tenants.
    */
-  constructor(tenants: TenantManager<AuthKey>) {
+  constructor(tenants: InternalTenantManager<AuthKey>) {
     super(tenants);
   }
+  tenantManager(): TenantManager {
+    return new _TenantManager(this.tenants) as unknown as TenantManager;
+  }
 
-  /**
-   * Returns a tenant-scoped auth instance for the given tenant ID.
-   *
-   * @param tenantId - Tenant identifier to scope subsequent operations.
-   * @returns A {@link TenantAwareAuth} instance bound to the tenant.
-   */
-  authForTenant(tenantId: string): TenantAwareAuth {
-    return new TenantAwareAuth(this.tenants, tenantId);
+  projectConfigManager(): ProjectConfigManager {
+    return new _ProjectConfigManager() as unknown as ProjectConfigManager;
   }
 }
 
@@ -925,15 +941,18 @@ export class Auth extends BaseAuth {
  * scope all operations (user CRUD, token verification, provider configs,
  * etc.) to a specific tenant.
  */
-export class TenantAwareAuth extends BaseAuth {
+export class _TenantAwareAuth
+  extends BaseAuth
+  implements Omit<TenantAwareAuth, 'verifyDecodedJWTNotRevokedOrDisabled'>
+{
   /**
    * Creates a new tenant-aware auth instance.
    *
-   * @param tenants - Shared {@link TenantManager}.
+   * @param tenants - Shared {@link InternalTenantManager}.
    * @param tenantId - Non-empty tenant identifier.
    * @throws {@link Error} if `tenantId` is falsy.
    */
-  constructor(tenants: TenantManager<AuthKey>, tenantId: string) {
+  constructor(tenants: InternalTenantManager<AuthKey>, tenantId: string) {
     if (!tenantId) throw new Error('Invalid tenantId');
 
     super(tenants, tenantId);
@@ -1079,4 +1098,79 @@ function genericBatchOp<T>(
   }
 
   return result;
+}
+
+class _TenantManager implements Omit<TenantManager, 'app'> {
+  constructor(private readonly tm: InternalTenantManager<AuthKey>) {}
+
+  authForTenant(tenantId: string): TenantAwareAuth {
+    return new _TenantAwareAuth(
+      this.tm,
+      tenantId
+    ) as unknown as TenantAwareAuth;
+  }
+
+  getTenant(tenantId: string): Promise<Tenant> {
+    void tenantId;
+
+    return this.notImplemented('getTenant()');
+  }
+  listTenants(
+    maxResults?: number,
+    pageToken?: string
+  ): Promise<ListTenantsResult> {
+    void maxResults;
+    void pageToken;
+    return this.notImplemented('listTenants()');
+  }
+
+  deleteTenant(tenantId: string): Promise<void> {
+    void tenantId;
+
+    return this.notImplemented('deleteTenant()');
+  }
+  createTenant(tenantOptions: CreateTenantRequest): Promise<Tenant> {
+    void tenantOptions;
+
+    return this.notImplemented('createTenant()');
+  }
+  updateTenant(
+    tenantId: string,
+    tenantOptions: UpdateTenantRequest
+  ): Promise<Tenant> {
+    void tenantId;
+    void tenantOptions;
+
+    return this.notImplemented('updateTenant()');
+  }
+
+  private notImplemented<T>(op: string): Promise<T> {
+    return rejectPromise(notImplementedError(`TenantManager.${op}`));
+  }
+}
+
+class _ProjectConfigManager
+  implements Omit<ProjectConfigManager, 'authRequestHandler'>
+{
+  getProjectConfig(): Promise<ProjectConfig> {
+    return this.notImplemented('getProjectConfig()');
+  }
+  updateProjectConfig(
+    projectConfigOptions: UpdateProjectConfigRequest
+  ): Promise<ProjectConfig> {
+    void projectConfigOptions;
+
+    return this.notImplemented('updateProjectConfig()');
+  }
+
+  private notImplemented<T>(op: string): Promise<T> {
+    return rejectPromise(notImplementedError(`ProjectConfigManager.${op}`));
+  }
+}
+
+function notImplementedError(operation: string): FirebaseError {
+  return authError(
+    'operation-not-allowed',
+    `${operation} is not implemented in @firebase-bridge/auth-context mock.`
+  );
 }

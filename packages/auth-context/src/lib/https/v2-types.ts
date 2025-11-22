@@ -1,8 +1,8 @@
 import { CallableRequest, HttpsFunction } from 'firebase-functions/v2/https';
 import { JustCallable } from '../_internal/types.js';
-import { CloudFunctionsParsedBody, MockHttpResponse } from '../http/types.js';
+import { CloudFunctionsParsedBody, MockHttpResponse } from '../http/http-types.js';
 import { AuthKey } from '../types.js';
-import { CallableFunctionRequest, RawHttpRequest } from './types.js';
+import { CallableFunctionRequest, RawHttpRequest } from './https-types.js';
 
 /**
  * V2 callable handler shape (`https.onCall`) as invoked by tests.

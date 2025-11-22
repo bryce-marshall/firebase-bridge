@@ -1,5 +1,5 @@
 import { createResponse } from 'node-mocks-http';
-import { HttpResponseOptions, MockHttpResponse } from '../types.js';
+import { HttpResponseOptions, MockHttpResponse } from '../http-types.js';
 
 /**
  * Create a new mocked Express `Response` suitable for unit tests.

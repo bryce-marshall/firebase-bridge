@@ -2,8 +2,8 @@ import { MockHttpRequest } from '../../lib/http/_internal/mock-http-request.js';
 import {
   CloudFunctionsParsedBody,
   GenericMultiValueDictionary,
-} from '../../lib/http/types.js';
-import { TestIdentity } from '../_helpers/test-manager.js';
+} from '../../lib/http/http-types.js';
+import { TestIdentity } from '../_helpers/test-auth-manager.js';
 import { CommonCallableRequest, TestRunner } from './common-types.js';
 
 /**

@@ -725,6 +725,11 @@ export interface AuthContextOptions<TKey extends AuthKey = AuthKey>
   appCheck?: AppCheckConstructor | boolean;
 }
 
+export interface AuthTokenOptions<TKey extends AuthKey = AuthKey>
+  extends AuthContextOptions<TKey> {
+  key: TKey | AltKey;
+}
+
 /**
  * Alternate identity lookup types supported by {@link AltKey}.
  *

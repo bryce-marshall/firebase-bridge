@@ -1,6 +1,6 @@
 import { DecodedIdToken } from 'firebase-admin/auth';
 import { AuthData } from 'firebase-functions/tasks';
-import { MockHttpResponse } from 'src/lib/http/types.js';
+import { MockHttpResponse } from 'src/lib/http/http-types.js';
 import { execPromise } from '../../_internal/util.js';
 import {
   AuthenticatedRequestContext,

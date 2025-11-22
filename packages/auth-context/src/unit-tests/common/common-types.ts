@@ -2,10 +2,13 @@ import { Request, Response } from 'express';
 import {
   CloudFunctionsParsedBody,
   MockHttpResponse,
-} from '../../lib/http/types';
-import { CallableFunctionRequest, RawHttpRequest } from '../../lib/https/types';
+} from '../../lib/http/http-types';
+import {
+  CallableFunctionRequest,
+  RawHttpRequest,
+} from '../../lib/https/https-types';
 import { AppCheckData, AuthData } from '../../lib/types';
-import { TestIdentity } from '../_helpers/test-manager';
+import { TestIdentity } from '../_helpers/test-auth-manager';
 
 /**
  * The request used to call a callable function.
