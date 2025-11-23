@@ -30,20 +30,17 @@ import {
   RemoveIndexSignature,
 } from './_internal/types.js';
 import {
-  appId,
   assignDefer,
   assignIf,
   cloneDeep,
   epochSeconds,
-  projectNumber,
-  providerId,
-  userId,
   utcDate,
 } from './_internal/util.js';
 import { Auth as _Auth } from './auth.js';
 import { _HttpsBroker } from './https/_internal/https-broker.js';
 import { buildAuthData, formatIss } from './https/_internal/util.js';
 import { HttpsBroker } from './https/https-types.js';
+import { IdGenerator } from './id-generator.js';
 import {
   AltKey,
   AppCheckConstructor,
@@ -185,6 +182,19 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
   readonly auth: Auth;
 
   /**
+   * Identifier generator helper for tests.
+   *
+   * @remarks
+   * Exposes the {@link IdGenerator} API directly on the manager for convenience,
+   * allowing test code to generate realistic Firebase-like UIDs, provider UIDs,
+   * project numbers, and other pseudo-random identifiers without importing
+   * `IdGenerator` separately.
+   *
+   * Identifiers are pseudo-random and **not cryptographically secure**.
+   */
+  readonly idGen = IdGenerator;
+
+  /**
    * Create a new {@link AuthManager} with optional environment overrides.
    *
    * @param options - Optional initialization overrides. See {@link AuthManagerOptions}.
@@ -193,8 +203,8 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
     this._tenantManager = new InternalTenantManager(
       options?.now ?? (() => Date.now())
     );
-    this.projectNumber = options?.projectNumber ?? projectNumber();
-    this.appId = options?.appId ?? appId(this.projectNumber);
+    this.projectNumber = options?.projectNumber ?? IdGenerator.projectNumber();
+    this.appId = options?.appId ?? IdGenerator.appId(this.projectNumber);
     this.projectId = options?.projectId ?? DEFAULT_PROJECT_ID;
     this.region = options?.region ?? DEFAULT_REGION;
     this.iss = formatIss(this.projectNumber);
@@ -499,7 +509,7 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
         lastRefreshTime: lastRefreshTime ? utcDate(lastRefreshTime) : null,
       };
     };
-    const uid = c.uid ?? userId();
+    const uid = c.uid ?? IdGenerator.firebaseUid();
     const userInfo: Record<string, PersistedUserInfo> = {};
 
     const instance: AuthInstance = {
@@ -535,7 +545,7 @@ export class AuthManager<TKey extends AuthKey = AuthKey>
 
         const data = p.data;
         const ui: PersistedUserInfo = {
-          uid: data?.uid ?? providerId(p.type),
+          uid: data?.uid ?? IdGenerator.providerUid(p.type),
           providerId: p.signInProvider,
         };
         userInfo[ui.providerId] = ui;

@@ -4,6 +4,7 @@ import {
   UserInfo,
   UserRecord,
 } from 'firebase-admin/auth';
+import { IdGenerator } from '../id-generator.js';
 import {
   MultiFactorConstructor,
   MultiFactorIdentifier,
@@ -17,15 +18,7 @@ import {
   IPhoneMultiFactorInfo,
   IUserRecord,
 } from './auth-types.js';
-import {
-  assignIf,
-  base64LikeId,
-  cloneDeep,
-  hexId,
-  numericId,
-  userId,
-  utcDate,
-} from './util.js';
+import { assignIf, cloneDeep, utcDate } from './util.js';
 
 type WithToJSON<T> = T & { toJSON(): object };
 
@@ -173,7 +166,7 @@ export function isForbiddenCustomClaim(key: string): boolean {
  * @returns A realistic email address (for example, `"user-a1b2c3@example.com"`).
  */
 export function generateEmail(domain?: string): string {
-  return `user-${hexId(6)}@${domain ?? 'example.com'}`;
+  return `user-${IdGenerator.hexId(6)}@${domain ?? 'example.com'}`;
 }
 
 /**
@@ -188,7 +181,7 @@ export function generateEmail(domain?: string): string {
  */
 export function generatePhoneNumber(country?: number): string {
   // E.164 number
-  return `+${country ?? 1}555${numericId(7)}`;
+  return `+${country ?? 1}555${IdGenerator.numericId(7)}`;
 }
 
 /**
@@ -426,7 +419,7 @@ export function assignMultiFactors(
 
     const mfi: IMultiFactorInfo = {
       factorId: mfe.factorId,
-      uid: mfe.uid ?? userId(),
+      uid: mfe.uid ?? IdGenerator.firebaseUid(),
     };
     if (mfi.factorId === 'phone') {
       assignIf(
@@ -458,7 +451,7 @@ export function assignMultiFactors(
  */
 export function base64PasswordHash(password: string): string {
   void password;
-  return base64LikeId(64);
+  return IdGenerator.base64LikeId(64);
 }
 
 /**
@@ -471,5 +464,5 @@ export function base64PasswordHash(password: string): string {
  * @returns A random 16-character base64-like string.
  */
 export function base64PasswordSalt(): string {
-  return base64LikeId(16);
+  return IdGenerator.base64LikeId(16);
 }

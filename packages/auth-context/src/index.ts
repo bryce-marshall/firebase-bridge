@@ -5,4 +5,5 @@ export * from './lib/https/https-types.js';
 export * from './lib/https/jwt.js';
 export * from './lib/https/v1-types.js';
 export * from './lib/https/v2-types.js';
+export * from './lib/id-generator.js';
 export * from './lib/types.js';

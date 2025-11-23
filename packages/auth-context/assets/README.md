@@ -126,7 +126,7 @@ await authManager.https.v2.onCall({ key: 'alice', data: { x: 1 } }, handler);
 
 ---
 
-# Invoking HTTPS functions
+## Invoking HTTPS functions
 
 The manager exposes:
 
@@ -256,7 +256,7 @@ async function invokeEcho() {
 
 # Core Concepts
 
-## 1. AuthManager
+## AuthManager
 
 `AuthManager` is the primary entry point. It provides:
 
@@ -267,15 +267,15 @@ async function invokeEcho() {
 - reset semantics (`reset()`),
 - a mock Admin Auth API (`auth`).
 
-### **Registered identities**
+### Registered identities
 
 - Added via `register(key, identity)`.
 - Serve as convenient test references.
 - On `reset()`, the working set is restored from them.
 
-### **Configuring identities with SignInProvider**
+### Configuring identities with SignInProvider
 
-Identities are primarily configured via the `providers` field using **SignInProvider** sentinels:
+All identities that are not anonymous must be configured with a sign-in provider via the `providers` field using **SignInProvider** sentinels:
 
 - `SignInProvider.Google` — synthetic Google identity with realistic `firebase.identities` entries.
 - `SignInProvider.Microsoft`, `SignInProvider.Apple`, etc. — other common providers.
@@ -285,7 +285,7 @@ Identities are primarily configured via the `providers` field using **SignInProv
 You can pass a single provider or an array of providers:
 
 - When multiple providers are supplied, a generated token's `firebase.sign_in_provider` defaults to the **first** provider in the `providers` array.
-- You can override the effective sign-in provider for a specific context/token by setting the `signInProvider` field on `AuthContextOptions` / `AuthTokenOptions`.
+- You can override the effective sign-in provider for a specific context/token (such as when invoking an http function) by setting the `signInProvider` field on `AuthContextOptions` / `AuthTokenOptions`.
 
 For example:
 
@@ -311,30 +311,26 @@ const token = authManager.token({
 });
 ```
 
-### **Default Identity Details**
+## Generating Identity Details
 
-Identity registration produces a persisted internal user (equivalent to a Firebase `UserRecord`). All authentication token fields are derived **only** from this persisted identity; providers influence identity creation **at registration time only**.
+Identity registration produces a persisted internal identity (equivalent to a Firebase `UserRecord`). All authentication token identity fields are derived **only** from persisted identities; providers influence identity creation **at registration time only**.
 
-#### **Provider defaults (registration only)**
+### Identity defaults and auto-generated fields
 
 When an identity is registered via `AuthManager.register()`:
 
-- Provider profile fields (`email`, `phoneNumber`, `displayName`, `photoURL`, etc.) are copied into the identity’s top-level fields **only during registration**, unless `suppressProviderDefaults: true` is set.
+- Any unspecified `uid` fields are auto-generated
+- Any assigned sign-in provider other than `anonymous` is assigned a minimal provider-specific generated identity if one is not explicitly supplied:
+
+  - For `phone` providers, a synthetic E.164-like phone number is generated.
+  - For all other providers, a synthetic email address is generated.
+
+- Provider profile fields (`email`, `phoneNumber`, `displayName`, `photoURL`, etc.) are copied into the identity’s top-level fields unless `suppressProviderDefaults: true` is set, or the top-level field was explicitly set.
 - Providers are processed **in array order**. Once a top-level field has been populated, later providers do not overwrite it.
-- After registration, provider defaults are **never applied again**. Token generation _only_ uses the persisted identity.
+- If a valid email is supplied or generated and `emailVerified` is omitted, the identity's `emailVerified` field defaults to to `true`. This is an intentional convenience for testing and differs from Firebase’s auth api default (`false`).
+- `creationTime`, `lastSignInTime`, and `lastRefreshTime` are generated if not supplied. `creationTime` defaults to the current time (according to the time generator) - 1 day. If `lastSignInTime` is not specified, or is less than `creationTime`, it defaults to `creationTime`. If `lastRefreshTime` is not specified or less than `lastSignInTime`, it defaults to `lastSignInTime`.
 
-For any provider other than `anonymous`, a provider-specific identity value is generated if one is not explicitly supplied.
-
-- For `phone` providers, a synthetic E.164-like phone number is generated.
-- For all other providers, a synthetic email address is generated.
-
-#### **Email verification defaults**
-
-When registering an identity, if a valid email is present and `emailVerified` is omitted, the mock sets `emailVerified` to `true`. This is an intentional convenience for testing and differs from Firebase’s default (`false`). Identities created via the mock Auth API (`createUser`) follow Firebase’s behavior and default `emailVerified` to `false` unless explicitly set.
-
-You may explicitly set `emailVerified: false` during registration or via the mock auth API.
-
-#### **Auth API (`createUser`, `updateUser`)**
+### Auth API (`createUser`, `updateUser`)
 
 When using the mock Admin Auth API:
 
@@ -342,7 +338,7 @@ When using the mock Admin Auth API:
 - No values are generated or derived.
 - All identity fields must be explicitly provided (mirroring Firebase Admin SDK behaviour).
 
-#### **Provider identities in tokens**
+### Provider identities in tokens
 
 Provider identities **are always embedded** in the generated token under `firebase.identities`, for example:
 
@@ -357,46 +353,16 @@ Provider identities **are always embedded** in the generated token under `fireba
 
 These values are derived from the identity’s provider list, not from top-level fields.
 
-#### **Top-level token fields**
+#### Top-level token fields
 
 Top-level identity fields like `email`, `phoneNumber`, `displayName`, and `photoURL` map to token claims such as `email`, `phone_number`, `name`, and `photo_url`. Once an identity has been created, top-level token claims are never assigned from provider fields.
 
-### **Working identity set**
+## Using AltKey for Identity Resolution
 
-This is the set used at invocation time. It includes:
-
-- copies of registered identities,
-- identities created via the mock Admin Auth API,
-- identities modified or deleted via the mock Admin Auth API.
-
-**Invocation fails if:**
-
-1. no identity can be resolved for the request, or
-2. the resolved identity exists but is **disabled**.
-
-### **Mock Admin Auth API** (`AuthManager.auth`)
-
-This is an optional test utility. It:
-
-- mimics parts of the Admin Auth SDK,
-- allows creation, update, and deletion of users,
-- mutates only the _working set_,
-- is not required for HTTPS invocation.
-
-This exists primarily to support test suites that inject a facade which normally wraps the Admin Auth SDK.
-
-### **Deterministic time**
-
-You may supply a custom `now()` function to the `AuthManager` constructor to stabilize token timestamps across tests.
-
----
-
-# Using AltKey for Identity Resolution
-
-The `key` used in a call descriptor may be:
+The `key` passed with an http function execution request may be:
 
 - `undefined` → unauthenticated invocation
-- `string | number` → lookup a **registered identity**
+- `string | number` → lookup a **registered identity** by its key
 - an `AltKey` instance → lookup a user in the _working set_ by UID, email, or phone
 
 AltKey enables dynamic discovery of identities from the **working identity set**, including:
@@ -431,9 +397,37 @@ await authManager.https.v2.onCall(
 - no matching working identity is found, or
 - the matching identity is **disabled**.
 
+### Working identity set
+
+This is the set used at invocation time. It includes:
+
+- copies of registered identities,
+- identities created via the mock Admin Auth API,
+- identities modified or deleted via the mock Admin Auth API.
+
+**Invocation fails if:**
+
+1. no identity can be resolved for the request, or
+2. the resolved identity exists but is **disabled**.
+
+### Mock Admin Auth API (`AuthManager.auth`)
+
+This is an optional test utility. It:
+
+- mimics parts of the Admin Auth SDK,
+- allows creation, update, and deletion of users,
+- mutates only the _working set_,
+- is not required for HTTPS invocation.
+
+This exists primarily to support test suites that inject a facade which normally wraps the Admin Auth SDK.
+
+### Deterministic time
+
+You may supply a custom `now()` function to the `AuthManager` constructor to stabilize token timestamps across tests.
+
 ---
 
-# Multi-tenant support
+## Multi-tenant support
 
 The mock supports multi-tenant environments. As in **Firebase**, each identity belongs either to the default (non-tenanted) user store or to a specific tenant’s user store. Once an identity has been created in a given store, it cannot be moved to another tenant.
 
@@ -479,14 +473,14 @@ When an identity belongs to a tenant, the synthesized token embeds it as:
 
 ---
 
-# Identity Lifecycle & Reset Semantics
+## Identity Lifecycle & Reset Semantics
 
-### **Working identity set mutation**
+### Working identity set mutation
 
 The working identity set may be modified via the mock Admin Auth API, accessible through
 `authManager.auth` and its tenant-scoped instances (for example, `authManager.auth.tenantManager().authForTenant(...)`).
 
-### **Resetting vs clearing state**
+### Resetting vs clearing state
 
 `authManager.reset()`
 
@@ -499,7 +493,7 @@ The working identity set may be modified via the mock Admin Auth API, accessible
 - clears **all state**, including registered identities,
 - returns the manager to an empty state (no identities configured).
 
-### **Invocation failures**
+### Invocation failures
 
 Invocation fails with a Firebase auth error if:
 
@@ -508,7 +502,7 @@ Invocation fails with a Firebase auth error if:
 
 This applies to both key-based and AltKey-based lookups.
 
-### **Synthesizing tokens**
+### Synthesizing tokens
 
 `AuthManager.token(options)` lets you generate a `DecodedIdToken` directly from the same machinery used for HTTPS invocation:
 
@@ -699,7 +693,7 @@ generates a token like:
 
 ---
 
-# Per-call Overrides
+## Per-call Overrides
 
 All onCall/onRequest request descriptors support optional shaping fields:
 
@@ -766,7 +760,40 @@ This applies to both `onCall` and `onRequest` flows, so any code that reads toke
 
 All of this shaping occurs on a mutable `HttpRequestOptions` instance, so you can still override headers, method, or URL explicitly in your test descriptors where needed.
 
-# Using AuthManager with an Application-Level Facade (for End-to-End Testability)
+## Identifier generation
+
+`AuthManager` automatically generates realistic identifiers for you when registering identities if values such as `uid` or provider-specific UIDs are not explicitly supplied. In most cases this is sufficient for tests that only care about “plausible” identity data.
+
+For scenarios where you want **explicit control or consistency across tests** (for example, shared constants for test users, or stable IDs reused across multiple suites), `AuthManager` exposes a small helper:
+
+```ts
+authManager.idGen; // alias for the static IdGenerator class
+```
+
+This helper provides methods for creating Firebase-like identifiers:
+
+```ts
+// Firebase-style UID (28-char alphanumeric)
+const uid = authManager.idGen.firebaseUid();
+
+// Provider-specific UID (by type)
+const googleUid = authManager.idGen.providerTypeUid('google'); // 21-digit numeric
+const appleUid = authManager.idGen.providerUid('apple.com'); // composite Apple-style ID
+
+// Project/app identifiers
+const projectNumber = authManager.idGen.projectNumber(); // 12-digit numeric
+const appId = authManager.idGen.appId(projectNumber); // 1:<projectNumber>:web:<hex>
+```
+
+You can use these values to:
+
+- define **stable test-user constants** shared across suites,
+- assign a fixed `uid` for the `AuthManager` registration key (generic `TKey`),
+- or reuse the same synthetic provider UIDs in fixtures and snapshots.
+
+All identifiers are generated using `Math.random()` and are **not cryptographically secure**. They are intended exclusively for mocks, fixtures, and test environments.
+
+## Using AuthManager with an Application-Level Facade (for End-to-End Testability)
 
 In many real-world Firebase backends, authentication is not consumed directly from Cloud Function contexts. Instead, applications wrap `firebase-admin/auth` inside a **local facade** or **service layer** that production code calls consistently (e.g., `AppServices.auth.verifyIdToken(req)`).
 
@@ -776,7 +803,7 @@ This pattern is optional, but extremely powerful for teams building structured F
 
 ---
 
-## Minimal Example – Injecting AuthManager into a Simple Facade
+### Minimal Example – Injecting AuthManager into a Simple Facade
 
 A small facade provides stable entry points for your backend code:
 
@@ -809,7 +836,7 @@ export async function getProfile(req: Request) {
 }
 ```
 
-### Test Initialization Using AuthManager
+#### Test Initialization Using AuthManager
 
 ```ts
 import { AuthManager, SignInProvider } from '@firebase-bridge/auth-context';
@@ -1028,7 +1055,7 @@ console.log(user.uid); // "alice"
 
 ---
 
-# Notes on fidelity
+## Notes on fidelity
 
 - realistic UID/email/phone/provider data
 - realistic AppCheck tokens
@@ -1037,7 +1064,7 @@ console.log(user.uid); // "alice"
 
 ---
 
-# Versioning & compatibility
+## Versioning & compatibility
 
 - Peer dependency: `firebase-functions`
 - Node ≥ 18
@@ -1045,18 +1072,18 @@ console.log(user.uid); // "alice"
 
 ---
 
-# Contributing
+## Contributing
 
 Minimal-maintainer mode. Issues welcome; PRs for fixes/docs.
 
 ---
 
-# License
+## License
 
 Apache-2.0 © 2025 Bryce Marshall
 
 ---
 
-# Trademarks
+## Trademarks
 
 Not affiliated with Google LLC. “Firebase” and “Cloud Functions” are trademarks of Google LLC.

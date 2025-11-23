@@ -1,3 +1,4 @@
+import { App } from 'firebase-admin/app';
 import {
   CreateRequest,
   UpdateRequest,
@@ -5,6 +6,7 @@ import {
   UserProvider,
   UserRecord,
 } from 'firebase-admin/auth';
+import { IdGenerator } from '../id-generator.js';
 import { AltKey, AuthKey } from '../types.js';
 import {
   assertEmail,
@@ -30,9 +32,7 @@ import {
   millisToSeconds,
   rejectPromise,
   resolvePromise,
-  userId,
 } from './util.js';
-import { App } from 'firebase-admin/app';
 
 /**
  * Predicate used to filter {@link AuthInstance} entries in the internal user store.
@@ -142,7 +142,7 @@ export class InternalTenantManager<TKey extends AuthKey> {
     tenantId: string | null | undefined,
     properties: CreateRequest
   ): Promise<UserRecord> {
-    const uid = properties.uid ?? userId();
+    const uid = properties.uid ?? IdGenerator.firebaseUid();
 
     try {
       const ai = this.initInstance(tenantId, uid);
@@ -590,7 +590,11 @@ export class InternalTenantManager<TKey extends AuthKey> {
       throw authError('phone-number-already-exists');
     }
 
-    assignIf(ai, 'emailVerified', properties.emailVerified ?? isCreate ? false : undefined);
+    assignIf(
+      ai,
+      'emailVerified',
+      properties.emailVerified ?? isCreate ? false : undefined
+    );
     assignIfOrDeleteNull(ai, 'email', assertEmail(properties.email));
     assignIfOrDeleteNull(
       ai,
