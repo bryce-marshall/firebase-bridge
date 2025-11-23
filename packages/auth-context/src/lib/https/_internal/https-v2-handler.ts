@@ -8,7 +8,7 @@ import { cloneDeep, execPromise } from '../../_internal/util.js';
 import { mockHttpRequest } from '../../http/_internal/mock-http-request.js';
 import { mockHttpResponse } from '../../http/_internal/mock-http-response.js';
 import {
-  CloudFunctionsParsedBody,
+  CloudFunctionsBody,
   HttpRequestOptions,
   MockHttpResponse,
 } from '../../http/http-types.js';
@@ -27,8 +27,8 @@ import { applyFunctionMeta } from './apply-function-meta.js';
 import { buildAuthData, execAndAwaitResponse } from './util.js';
 
 interface RunnableV2<
-  TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody,
-  TResponse extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+  TData extends CloudFunctionsBody = CloudFunctionsBody,
+  TResponse extends CloudFunctionsBody = CloudFunctionsBody
 > {
   run(request: CallableRequest<TData>): Promise<TResponse> | TResponse;
 }
@@ -41,7 +41,7 @@ export class _HttpsV2Handler<TKey extends AuthKey>
    */
   constructor(private readonly _provider: AuthProvider<TKey>) {}
 
-  onRequest<TData extends CloudFunctionsParsedBody>(
+  onRequest<TData extends CloudFunctionsBody>(
     request: RawHttpRequest<TKey, TData>,
     handler: RequestHandlerV2
   ): Promise<MockHttpResponse> {
@@ -55,8 +55,8 @@ export class _HttpsV2Handler<TKey extends AuthKey>
   }
 
   onCall<
-    TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody,
-    TResponse extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+    TData extends CloudFunctionsBody = CloudFunctionsBody,
+    TResponse extends CloudFunctionsBody = CloudFunctionsBody
   >(
     request: CallableFunctionRequest<TKey, TData>,
     handler: CallableHandlerV2<TData, TResponse>
@@ -68,8 +68,8 @@ export class _HttpsV2Handler<TKey extends AuthKey>
   }
 
   runCallable<
-    TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody,
-    TResponse extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+    TData extends CloudFunctionsBody = CloudFunctionsBody,
+    TResponse extends CloudFunctionsBody = CloudFunctionsBody
   >(
     request: CallableFunctionRequest<TKey, TData>,
     httpsFunction: HttpsFunction
@@ -103,7 +103,7 @@ export class _HttpsV2Handler<TKey extends AuthKey>
  */
 function toRequestContext<
   TKey extends AuthKey,
-  TData extends CloudFunctionsParsedBody
+  TData extends CloudFunctionsBody
 >(
   request: RawHttpRequest<TKey, TData>,
   generic: UnauthenticatedRequestContext | AuthenticatedRequestContext
@@ -146,7 +146,7 @@ function toRequestContext<
  */
 function toCallableRequest<
   TKey extends AuthKey,
-  TData extends CloudFunctionsParsedBody
+  TData extends CloudFunctionsBody
 >(
   request: CallableFunctionRequest<TKey, TData>,
   generic: UnauthenticatedRequestContext | AuthenticatedRequestContext

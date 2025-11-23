@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import {
-  CloudFunctionsParsedBody,
+  CloudFunctionsBody,
   MockHttpResponse,
 } from '../../lib/http/http-types';
 import {
@@ -14,7 +14,7 @@ import { TestIdentity } from '../_helpers/test-auth-manager';
  * The request used to call a callable function.
  */
 export interface CommonCallableRequest<
-  T extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+  T extends CloudFunctionsBody = CloudFunctionsBody
 > {
   /**
    * The parameters used by a client when calling this function.
@@ -39,8 +39,8 @@ export interface CommonCallableRequest<
 }
 
 export type CommonCallableHandler<
-  TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody,
-  TResponse extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+  TData extends CloudFunctionsBody = CloudFunctionsBody,
+  TResponse extends CloudFunctionsBody = CloudFunctionsBody
 > = (request: CommonCallableRequest<TData>) => Promise<TResponse> | TResponse;
 
 export type CommonRequestHandler = (
@@ -50,13 +50,13 @@ export type CommonRequestHandler = (
 
 export interface TestRunner {
   onCall<
-    TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody,
-    TResponse extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+    TData extends CloudFunctionsBody = CloudFunctionsBody,
+    TResponse extends CloudFunctionsBody = CloudFunctionsBody
   >(
     request: CallableFunctionRequest<TestIdentity, TData>,
     handler: CommonCallableHandler<TData, TResponse>
   ): Promise<TResponse>;
-  onRequest<TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody>(
+  onRequest<TData extends CloudFunctionsBody = CloudFunctionsBody>(
     request: RawHttpRequest<TestIdentity, TData>,
     handler: CommonRequestHandler
   ): Promise<MockHttpResponse>;

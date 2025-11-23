@@ -1,7 +1,7 @@
 import { HttpsFunction, Runnable } from 'firebase-functions/v1';
 import { CallableContext } from 'firebase-functions/v1/https';
 import { JustCallable } from '../_internal/types.js';
-import { CloudFunctionsParsedBody, MockHttpResponse } from '../http/http-types.js';
+import { CloudFunctionsBody, MockHttpResponse } from '../http/http-types.js';
 import { AuthKey } from '../types.js';
 import { CallableFunctionRequest, RawHttpRequest } from './https-types.js';
 
@@ -16,8 +16,8 @@ import { CallableFunctionRequest, RawHttpRequest } from './https-types.js';
  * - The returned value may be synchronous or a `Promise`.
  */
 export type CallableHandlerV1<
-  TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody,
-  TResponse extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+  TData extends CloudFunctionsBody = CloudFunctionsBody,
+  TResponse extends CloudFunctionsBody = CloudFunctionsBody
 > = (data: TData, context: CallableContext) => Promise<TResponse> | TResponse;
 
 export type RequestHandlerV1 = JustCallable<HttpsFunction>;
@@ -62,7 +62,7 @@ export interface HttpsV1Handler<TKey extends AuthKey> {
    * // expect(res._getJSONData()).toEqual({ ok: true });
    * ```
    */
-  onRequest<TData extends CloudFunctionsParsedBody>(
+  onRequest<TData extends CloudFunctionsBody>(
     request: RawHttpRequest<TKey, TData>,
     handler: RequestHandlerV1
   ): Promise<MockHttpResponse>;
@@ -94,8 +94,8 @@ export interface HttpsV1Handler<TKey extends AuthKey> {
    * ```
    */
   onCall<
-    TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody,
-    TResponse extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+    TData extends CloudFunctionsBody = CloudFunctionsBody,
+    TResponse extends CloudFunctionsBody = CloudFunctionsBody
   >(
     request: CallableFunctionRequest<TKey, TData>,
     handler: CallableHandlerV1<TData, TResponse>
@@ -125,8 +125,8 @@ export interface HttpsV1Handler<TKey extends AuthKey> {
    * ```
    */
   runCallable<
-    TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody,
-    TResponse extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+    TData extends CloudFunctionsBody = CloudFunctionsBody,
+    TResponse extends CloudFunctionsBody = CloudFunctionsBody
   >(
     request: CallableFunctionRequest<TKey, TData>,
     runnable: HttpsFunction & Runnable<TData>

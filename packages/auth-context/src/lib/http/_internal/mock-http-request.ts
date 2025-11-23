@@ -7,7 +7,7 @@ import {
   RequestOptions,
 } from 'node-mocks-http';
 import {
-  CloudFunctionsParsedBody,
+  CloudFunctionsBody,
   GenericValueDictionary,
   HttpCookies,
   HttpHeaders,
@@ -104,7 +104,7 @@ function normalizeHeaders(
  * @internal
  */
 function materializeBodyBuffer(
-  body: CloudFunctionsParsedBody | undefined
+  body: CloudFunctionsBody | undefined
 ): Buffer {
   if (body == null) return Buffer.alloc(0);
   if (Buffer.isBuffer(body)) return body;

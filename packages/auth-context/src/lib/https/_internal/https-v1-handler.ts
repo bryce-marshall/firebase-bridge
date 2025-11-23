@@ -5,7 +5,7 @@ import { cloneDeep, execPromise } from '../../_internal/util.js';
 import { mockHttpRequest } from '../../http/_internal/mock-http-request.js';
 import { mockHttpResponse } from '../../http/_internal/mock-http-response.js';
 import {
-  CloudFunctionsParsedBody,
+  CloudFunctionsBody,
   HttpRequestOptions,
   MockHttpResponse,
 } from '../../http/http-types.js';
@@ -42,7 +42,7 @@ export class _HttpsV1Handler<TKey extends AuthKey>
    */
   constructor(private readonly _provider: AuthProvider<TKey>) {}
 
-  onRequest<TData extends CloudFunctionsParsedBody>(
+  onRequest<TData extends CloudFunctionsBody>(
     request: RawHttpRequest<TKey, TData>,
     handler: RequestHandlerV1
   ): Promise<MockHttpResponse> {
@@ -56,8 +56,8 @@ export class _HttpsV1Handler<TKey extends AuthKey>
   }
 
   onCall<
-    TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody,
-    TResponse extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+    TData extends CloudFunctionsBody = CloudFunctionsBody,
+    TResponse extends CloudFunctionsBody = CloudFunctionsBody
   >(
     request: CallableFunctionRequest<TKey, TData>,
     handler: CallableHandlerV1<TData, TResponse>
@@ -69,8 +69,8 @@ export class _HttpsV1Handler<TKey extends AuthKey>
   }
 
   runCallable<
-    TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody,
-    TResponse extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+    TData extends CloudFunctionsBody = CloudFunctionsBody,
+    TResponse extends CloudFunctionsBody = CloudFunctionsBody
   >(
     request: CallableFunctionRequest<TKey, TData>,
     runnable: HttpsFunction & Runnable<TData>
@@ -99,7 +99,7 @@ export class _HttpsV1Handler<TKey extends AuthKey>
  */
 function toRequestContext<
   TKey extends AuthKey,
-  TData extends CloudFunctionsParsedBody
+  TData extends CloudFunctionsBody
 >(
   request: RawHttpRequest<TKey, TData>,
   generic: UnauthenticatedRequestContext | AuthenticatedRequestContext
@@ -139,7 +139,7 @@ function toRequestContext<
  */
 function toCallableContext<
   TKey extends AuthKey,
-  TData extends CloudFunctionsParsedBody
+  TData extends CloudFunctionsBody
 >(
   request: CallableFunctionRequest<TKey, TData>,
   generic: UnauthenticatedRequestContext | AuthenticatedRequestContext

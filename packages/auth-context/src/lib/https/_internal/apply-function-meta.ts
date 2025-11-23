@@ -3,7 +3,7 @@ import { DecodedIdToken } from 'firebase-admin/auth';
 import { DEFAULT_PROJECT_ID, DEFAULT_REGION } from '../../_internal/types.js';
 import { cloneDeep, defaultString } from '../../_internal/util.js';
 import {
-  CloudFunctionsParsedBody,
+  CloudFunctionsBody,
   HttpRequestOptions,
 } from '../../http/http-types.js';
 import { AuthKey } from '../../types.js';
@@ -54,7 +54,7 @@ export interface FunctionMetaDataOptions {
  *     or they are undefined/empty.
  */
 export function applyFunctionMeta(
-  request: CloudFunctionRequestBase<AuthKey, CloudFunctionsParsedBody>,
+  request: CloudFunctionRequestBase<AuthKey, CloudFunctionsBody>,
   httpOptions: HttpRequestOptions,
   fnOptions: FunctionMetaDataOptions
 ): void {

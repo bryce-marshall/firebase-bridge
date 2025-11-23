@@ -1,5 +1,5 @@
 import {
-  CloudFunctionsParsedBody,
+  CloudFunctionsBody,
   HttpHeaders,
   HttpRequestOptions,
 } from '../http/http-types.js';
@@ -11,7 +11,7 @@ import { HttpsV2Handler } from './v2-types.js';
  * Common fields for describing an invocation target and payload for HTTPS functions.
  *
  * @typeParam TKey - Registry key type used to look up the mock identity (via the AuthProvider).
- * @typeParam TData - Arbitrary JSON-serializable payload passed to the function (see {@link CloudFunctionsParsedBody}).
+ * @typeParam TData - Arbitrary JSON-serializable payload passed to the function (see {@link CloudFunctionsBody}).
  *
  * @remarks
  * - The `key` selects which registered identity to use when synthesizing `auth` and (optionally) App Check.
@@ -21,7 +21,7 @@ import { HttpsV2Handler } from './v2-types.js';
  */
 export interface CloudFunctionRequestBase<
   TKey extends AuthKey,
-  TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+  TData extends CloudFunctionsBody = CloudFunctionsBody
 > extends AuthContextOptions<TKey> {
   /**
    * Logical payload for the call. For `onCall`, this becomes `request.data`;
@@ -66,7 +66,7 @@ export interface CloudFunctionRequestBase<
  */
 export interface CallableFunctionRequest<
   TKey extends AuthKey,
-  TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+  TData extends CloudFunctionsBody = CloudFunctionsBody
 > extends CloudFunctionRequestBase<TKey, TData>,
     AuthContextOptions<TKey> {
   /**
@@ -103,7 +103,7 @@ export interface CallableFunctionRequest<
  */
 export interface RawHttpRequest<
   TKey extends AuthKey,
-  TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+  TData extends CloudFunctionsBody = CloudFunctionsBody
 > extends CloudFunctionRequestBase<TKey, TData> {
   /**
    * Low-level request shaping options for `onRequest` handlers.

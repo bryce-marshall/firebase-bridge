@@ -1,6 +1,6 @@
 import { MockHttpRequest } from '../../lib/http/_internal/mock-http-request.js';
 import {
-  CloudFunctionsParsedBody,
+  CloudFunctionsBody,
   GenericMultiValueDictionary,
 } from '../../lib/http/http-types.js';
 import { TestIdentity } from '../_helpers/test-auth-manager.js';
@@ -171,7 +171,7 @@ const isEpochSeconds = (n: unknown) => {
 const isNonEmptyString = (s: unknown) => typeof s === 'string' && s.length > 0;
 
 export function expectCallableContextShape<
-  T extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+  T extends CloudFunctionsBody = CloudFunctionsBody
 >(ctx: CommonCallableRequest<T>, expectedData: T) {
   // Top-level
   expect(ctx).toEqual(

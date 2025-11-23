@@ -21,27 +21,11 @@ export type HttpMethod =
   | 'PATCH';
 
 /**
- * Canonical set of **already-parsed** request body shapes supported by the mock.
- *
- * @remarks
- * - For `application/json`: either an **object** or **array**.
- * - For `application/x-www-form-urlencoded`: a string map or string-array map as produced by typical parsers.
- * - For `text/*`: a string.
- * - `null` / `undefined` indicates no body or an unsupported content type.
- *
+ * Represents the body of a CloudFunctions request.
  * Handlers in your tests should treat `body` as **parsed** (no raw buffer/string parsing required).
  */
-export type CloudFunctionsParsedBody =
-  // JSON:
-  | { [k: string]: unknown } // application/json (object)
-  | unknown[] // application/json (array)
-  // URL-encoded:
-  | { [k: string]: string | string[] } // application/x-www-form-urlencoded
-  // Text:
-  | string // text/plain, text/*
-  // Absent/unsupported:
-  | null
-  | undefined;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type CloudFunctionsBody = any;
 
 /** Single generic optional value used by index signatures. */
 export type GenericValue = string | undefined;
@@ -178,7 +162,7 @@ export interface HttpRequestOptions {
    * @remarks
    * Supply an already-parsed value; the mock does not parse raw buffers/strings.
    */
-  body?: CloudFunctionsParsedBody;
+  body?: CloudFunctionsBody;
 
   /** Parsed query string values. */
   query?: HttpQuery;
@@ -198,7 +182,7 @@ export interface HttpRequestOptions {
     | GenericValue
     | GenericMultiValueDictionary
     | GenericValueDictionary
-    | CloudFunctionsParsedBody
+    | CloudFunctionsBody
     | undefined;
 }
 
