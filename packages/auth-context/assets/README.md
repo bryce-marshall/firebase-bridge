@@ -121,7 +121,7 @@ authManager.register('anon', {
 Registered identities are convenience references used in tests. If `key` is omitted, the call is treated as unauthenticated.
 
 ```ts
-await authManager.https.v2.onCall({ key: 'alice', data: { x: 1 } }, handler);
+await authManager.https.v2.runCallable({ key: 'alice', data: { x: 1 } }, handler);
 ```
 
 ---
@@ -130,7 +130,7 @@ await authManager.https.v2.onCall({ key: 'alice', data: { x: 1 } }, handler);
 
 The manager exposes:
 
-- `authManager.https.v1.onCall` / `authManager.https.v2.onCall`
+- `authManager.https.v1.runOnCall` / `authManager.https.v2.runOnCall`
 - `authManager.https.v1.onRequest` / `authManager.https.v2.onRequest`
 
 These wrap real function handlers and supply a realistic context.
@@ -142,7 +142,7 @@ const greet = onCall((req) => {
   return { message: `Hello, ${req.data.name}!` };
 });
 
-const result = await authManager.https.v2.onCall(
+const result = await authManager.https.v2.runCallable(
   { key: 'alice', data: { name: 'Bob' } },
   greet
 );
@@ -155,7 +155,10 @@ const add = runWith({}).https.onCall((data, ctx) => {
   return { sum: data.a + data.b, caller: ctx.auth?.uid };
 });
 
-await authManager.https.v1.onCall({ key: 'alice', data: { a: 2, b: 3 } }, add);
+await authManager.https.v1.runCallable(
+  { key: 'alice', data: { a: 2, b: 3 } },
+  add
+);
 ```
 
 ### v2 onRequest
@@ -378,13 +381,13 @@ Note that `AltKey` is not an alias system, but rather a search filter applied to
 import { AltKey } from '@firebase-bridge/auth-context';
 
 // Lookup by UID
-await authManager.https.v2.onCall(
+await authManager.https.v2.runCallable(
   { key: AltKey.uid('UID_123'), data: {} },
   handler
 );
 
 // Lookup by email (tenant optional)
-await authManager.https.v2.onCall(
+await authManager.https.v2.runCallable(
   { key: AltKey.email('a@example.com'), data: {} },
   handler
 );
@@ -698,7 +701,7 @@ generates a token like:
 All onCall/onRequest request descriptors support optional shaping fields:
 
 ```ts
-await authManager.https.v2.onCall(
+await authManager.https.v2.runCallable(
   {
     key: 'alice',
     data: { x: 1 },

@@ -1,5 +1,5 @@
 import {
-  CloudFunctionsParsedBody,
+  CloudFunctionsBody,
   MockHttpResponse,
 } from '../../lib/http/http-types.js';
 import {
@@ -20,8 +20,8 @@ import { runHttpsCommonSuites } from '../common/https-common.suite.js';
 class V1Runner implements TestRunner {
   readonly manager = new TestAuthManager();
   onCall<
-    TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody,
-    TResponse extends CloudFunctionsParsedBody = CloudFunctionsParsedBody
+    TData extends CloudFunctionsBody = CloudFunctionsBody,
+    TResponse extends CloudFunctionsBody = CloudFunctionsBody
   >(
     request: CallableFunctionRequest<TestIdentity, TData>,
     handler: CommonCallableHandler<TData, TResponse>
@@ -34,7 +34,7 @@ class V1Runner implements TestRunner {
     });
   }
 
-  onRequest<TData extends CloudFunctionsParsedBody = CloudFunctionsParsedBody>(
+  onRequest<TData extends CloudFunctionsBody = CloudFunctionsBody>(
     request: RawHttpRequest<TestIdentity, TData>,
     handler: CommonRequestHandler
   ): Promise<MockHttpResponse> {
