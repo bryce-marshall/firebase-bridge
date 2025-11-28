@@ -13,14 +13,14 @@ import {
   runUnavailableMsg,
 } from '../_internal/util.js';
 import { RegisterTriggerOptions } from '../types.js';
-import { getTriggerMetaV2 } from './meta-helper.js';
+import { triggerMetaFromFunction } from './meta-helper.js';
 
 /**
  * Registers a Cloud Functions **v2** Firestore trigger against the mock controller
  * and returns an unsubscribe function.
  *
  * What this does
- * - Resolves trigger metadata (`route`, accepted `kinds`) via {@link getTriggerMetaV2}.
+ * - Resolves trigger metadata (`route`, accepted `kinds`) via {@link triggerMetaFromFunction}.
  * - Subscribes to the underlying database change stream at `route`.
  * - Filters each change by kind (`'create' | 'update' | 'delete' | 'write'`).
  * - Converts the change into a **CloudEvent** payload (see {@link buildCloudEvent}).
@@ -68,7 +68,7 @@ export function registerTrigger<T extends CloudEvent<unknown>>(
 
   const runner = new (class extends TriggerRunner<CloudFunction<T>> {
     override getTriggerMeta(handler: CloudFunction<any>): GenericTriggerMeta {
-      return getTriggerMetaV2(handler);
+      return triggerMetaFromFunction(handler);
     }
 
     override run(

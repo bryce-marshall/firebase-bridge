@@ -17,7 +17,7 @@ import {
   toFirestorePath,
 } from '../_internal/util.js';
 import { RegisterTriggerOptions } from '../types.js';
-import { getTriggerMeta } from './meta-helper.js';
+import { triggerMetaFromFunction } from './meta-helper.js';
 
 export type TriggerPayload =
   | Change<DocumentSnapshot> // onWrite / onUpdate
@@ -33,7 +33,7 @@ export type TriggerPayload =
  * - Converts internal change events into the Cloud Functions v1 payload:
  *   `Change<DocumentSnapshot>` plus an event context.
  * - Filters events according to the trigger kind (`create`, `update`, `delete`,
- *   or `write`) derived from {@link getTriggerMeta}.
+ *   or `write`) derived from {@link triggerMetaFromFunction}.
  * - Executes the user function via `handler.run(change, context)` inside a
  *   simulated Functions environment (`withFunctionsEnv`) for production-like
  *   globals/env behavior.
@@ -90,7 +90,7 @@ export function registerTrigger<
 
   const runner = new (class extends TriggerRunner<CloudFunction<T>> {
     override getTriggerMeta(handler: CloudFunction<T>): GenericTriggerMeta {
-      return getTriggerMeta(handler);
+      return triggerMetaFromFunction(handler);
     }
 
     override run(

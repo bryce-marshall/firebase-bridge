@@ -16,6 +16,7 @@ import {
   toChangeRecord,
 } from './util.js';
 
+export type TriggerKind = Kind | 'write';
 /**
  * Minimal metadata describing a Firestore trigger binding.
  *
@@ -36,7 +37,7 @@ export interface GenericTriggerMeta {
    * - Include `'write'` to receive all write events.
    * - Otherwise, provide an array of specific {@link Kind} values.
    */
-  kinds: (Kind | 'write')[];
+  kinds: TriggerKind[];
 }
 
 /**

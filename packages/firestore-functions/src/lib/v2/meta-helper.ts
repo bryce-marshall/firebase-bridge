@@ -1,19 +1,10 @@
+import { Expression } from 'firebase-functions/params';
 import type { CloudEvent, CloudFunction } from 'firebase-functions/v2';
-import { Kind } from '../_internal/util.js';
-
-/**
- * Metadata describing a Firestore v2 trigger that we care about for routing.
- *
- * - `route` is the document path template relative to `/documents`
- *   (e.g. `"users/{uid}/accounts/{aid}"`).
- * - `kinds` is a one-element array indicating which specific change kind
- *   the trigger represents (`'create' | 'update' | 'delete' | 'write'`),
- *   derived from the endpoint's `eventType`.
- */
-export type TriggerMetaV2 = {
-  route: string; // e.g. "users/{uid}/accounts/{aid}"
-  kinds: (Kind | 'write')[]; // mapped from eventType
-};
+import { ManifestEndpoint } from 'node_modules/firebase-functions/lib/runtime/manifest.js';
+import {
+  GenericTriggerMeta,
+  TriggerKind,
+} from '../_internal/trigger-runner.js';
 
 /**
  * Maps a v2 Firestore CloudEvent `eventType` to an internal change kind.
@@ -23,17 +14,13 @@ export type TriggerMetaV2 = {
  * @param eventType - CloudEvent type string from the endpoint manifest.
  * @returns A single-element tuple with the mapped {@link Kind}.
  */
-function mapKindsV2(eventType: string): [Kind | 'write'] {
+function mapKinds(eventType: string | undefined): TriggerKind[] {
+  if (!eventType) return [];
   const et = eventType || '';
-  if (et.includes('document.v1.created')) return ['create'];
-  if (et.includes('document.v1.updated')) return ['update'];
-  if (et.includes('document.v1.deleted')) return ['delete'];
-  if (et.includes('document.v1.written')) return ['write'];
-  // fallback
-  if (et.includes('document.created')) return ['create'];
-  if (et.includes('document.updated')) return ['update'];
-  if (et.includes('document.deleted')) return ['delete'];
-  if (et.includes('document.written')) return ['write'];
+  if (et.includes('.created')) return ['create'];
+  if (et.includes('.updated')) return ['update'];
+  if (et.includes('.deleted')) return ['delete'];
+  if (et.includes('.written')) return ['write'];
 
   return ['write'];
 }
@@ -83,45 +70,20 @@ type EventTrigger = Readonly<{
   resource?: string;
 }>;
 
+type ResetValue = unknown;
+
 /**
  * Minimal public-safe shape for the internal function metadata.
  * Covers both modern `__endpoint` and legacy `__trigger` layouts.
  */
-type EndpointLike = Readonly<{
-  eventTrigger?: EventTrigger;
-}>;
-
-/**
- * Helper shape for safely reading internal properties off the CloudFunction wrapper.
- */
-type EndpointHost = {
-  __endpoint?: EndpointLike;
-  __trigger?: EndpointLike;
-};
-
-/**
- * Safely extracts the internal endpoint/trigger description from a v2 CloudFunction.
- *
- * Tries `__endpoint` first (current), then `__trigger` (legacy). Returns `undefined`
- * if neither property is available (which can happen in some test environments).
- *
- * @param h - The CloudFunction wrapper returned by `firebase-functions/v2`.
- * @returns The endpoint manifest subset we care about, or `undefined`.
- */
-function getEndpointSafe(
-  h: CloudFunction<CloudEvent<unknown>>
-): EndpointLike | undefined {
-  try {
-    return (h as EndpointHost).__endpoint;
-  } catch {
-    //
-  }
-  try {
-    return (h as EndpointHost).__trigger;
-  } catch {
-    //
-  }
-  return undefined;
+interface EventTriggerLike {
+  eventFilters: Record<string, string | Expression<string>>;
+  eventFilterPathPatterns?: Record<string, string | Expression<string>>;
+  channel?: string;
+  eventType: string;
+  retry: boolean | Expression<boolean> | ResetValue;
+  region?: string;
+  serviceAccountEmail?: string | ResetValue;
 }
 
 /**
@@ -137,7 +99,7 @@ function getEndpointSafe(
  * @returns The route template relative to `/documents`, e.g. `"users/{id}"`.
  * @throws If no supported field is found.
  */
-function extractRouteFromEventTrigger(et: EventTrigger): string {
+function extractRouteFromEventTrigger(et: EventTriggerLike): string {
   // v2 shape #1: objects
   //   eventFilters: { database: '(default)', namespace: '(default)' }
   //   eventFilterPathPatterns: { document: 'users/{userId}/data/profile' }
@@ -165,7 +127,7 @@ function extractRouteFromEventTrigger(et: EventTrigger): string {
   }
 
   // Fallback to v1-style resource
-  const res: string | undefined = et?.resource;
+  const res: string | undefined = (et as EventTrigger)?.resource;
   if (typeof res === 'string') {
     const i = res.indexOf('/documents/');
     if (i >= 0) return res.slice(i + '/documents/'.length);
@@ -176,17 +138,44 @@ function extractRouteFromEventTrigger(et: EventTrigger): string {
   );
 }
 
-/** Extracts route/kinds from a v2 Cloud Function endpoint. */
-export function getTriggerMetaV2(
-  handler: CloudFunction<CloudEvent<unknown>>
-): TriggerMetaV2 {
-  const ep = getEndpointSafe(handler);
+/**
+ * Derives minimal Firestore trigger metadata from a v2 endpoint manifest.
+ *
+ * @remarks
+ * This helper inspects the `eventTrigger` section of a `ManifestEndpoint`
+ * produced by `firebase-functions/v2` and extracts:
+ *
+ * - {@link GenericTriggerMeta.route} — the Firestore **document route
+ *   template** (e.g. `"users/{userId}/profile"`), resolved via
+ *   {@link extractRouteFromEventTrigger}.
+ * - {@link GenericTriggerMeta.kinds} — the inferred change kind(s) based on
+ *   the CloudEvent `eventType`, using {@link mapKinds}.
+ *
+ * If `ep` is `undefined` or does not describe a Firestore document trigger,
+ * the returned object may have `route` or `kinds` omitted.
+ *
+ * @param ep - The v2 endpoint manifest for a Cloud Function handler.
+ * @returns A partial {@link GenericTriggerMeta} containing any resolved
+ *          `route` and `kinds` values.
+ */
+export function getTriggerMeta(
+  ep: ManifestEndpoint | undefined
+): Partial<GenericTriggerMeta> {
   const et = ep?.eventTrigger;
-  if (!et)
-    throw new Error('Not a Firestore v2 event function (missing eventTrigger)');
-
-  const route = extractRouteFromEventTrigger(et);
-  const kinds = mapKindsV2(et.eventType);
+  const route = et ? extractRouteFromEventTrigger(et) : undefined;
+  const kinds = mapKinds(et?.eventType);
 
   return { route, kinds };
+}
+
+/** Extracts route/kinds from a v2 Cloud Function endpoint. */
+export function triggerMetaFromFunction(
+  handler: CloudFunction<CloudEvent<unknown>>
+): GenericTriggerMeta {
+  const meta = getTriggerMeta(handler?.__endpoint);
+  if (!meta.kinds?.length || !meta.route) {
+    throw new Error('Not a Firestore event function or missing metadata');
+  }
+
+  return meta as GenericTriggerMeta;
 }

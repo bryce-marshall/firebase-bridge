@@ -15,18 +15,19 @@ If you find it useful and would like to support ongoing development, you can [bu
 
 ## Intent
 
-* **Move fast**: iterate on triggers and backend logic without the emulator boot/deploy loop.
-* **High fidelity**: mirror Firestore Admin SDK semantics (writes, transforms, queries, listeners, vector values, etc.).
-* **Trust but verify**: run the same suites against the **mock** and the **emulator** to catch divergences early.
+- **Move fast**: iterate on triggers and backend logic without the emulator boot/deploy loop.
+- **High fidelity**: mirror Firestore Admin SDK semantics (writes, transforms, queries, listeners, vector values, etc.).
+- **Trust but verify**: run the same suites against the **mock** and the **emulator** to catch divergences early.
 
 ---
 
 ## Output npm packages & licensing
 
-| Package                                  | Project (this repo)            | Purpose                                                                       | License        |
-| ---------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------- | -------------- |
-| **@firebase-bridge/firestore-admin**     | `packages/firestore-admin`     | High‑fidelity **in‑memory Firestore Admin SDK** mock for unit tests           | **Apache‑2.0** |
-| **@firebase-bridge/firestore-functions** | `packages/firestore-functions` | Binds **`firebase-functions` v1 & v2** Firestore triggers to the in‑memory DB | **Apache‑2.0** |
+| Package                                  | Project (this repo)            | Purpose                                                                        | License        |
+| ---------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------ | -------------- |
+| **@firebase-bridge/firestore-admin**     | `packages/firestore-admin`     | High‑fidelity **in‑memory Firestore Admin SDK** mock for unit tests            | **Apache‑2.0** |
+| **@firebase-bridge/firestore-functions** | `packages/firestore-functions` | Binds **`firebase-functions` v1 & v2** Firestore triggers to the in‑memory DB  | **Apache‑2.0** |
+| **@firebase-bridge/auth-context**        | `packages/auth-context`        | High-fidelity **mock invocation layer** for **Firebase HTTPS Cloud Functions** | **Apache‑2.0** |
 
 > Licensing: The workspace uses **Apache‑2.0**. Some files adapt Google code (e.g., `googleapis/nodejs-firestore`); those files carry upstream headers and a modification notice. See each package’s `LICENSE` and (where applicable) `NOTICE`.
 
@@ -34,18 +35,19 @@ If you find it useful and would like to support ongoing development, you can [bu
 
 ## Projects (at repo root)
 
-* **`packages/firestore-admin`** — implementation of `@firebase-bridge/firestore-admin` (the in‑memory Firestore Admin SDK mock). Tests run **in‑process** (no emulator).
-* **`packages/firestore-functions`** — implementation of `@firebase-bridge/firestore-functions` (trigger binding for `firebase-functions` v1/v2). Tests run **in‑process** (no emulator). Binding is **explicit** in tests.
-* **`firestore-bridge-test-suites`** — shared, black‑box test suites that exercise Firestore behavior via public APIs. Consumed by both the mock and emulator runners.
-* **`firestore-bridge-production`** — test runner that targets the **Firebase Emulator** and forwards to `firestore-bridge-test-suites` to validate parity.
-* **`smoke/smoke-consumer`** — a tiny app that consumes the locally built packages, verifying installability, published shape, and dual CJS/ESM execution.
+- **`packages/firestore-admin`** — implementation of `@firebase-bridge/firestore-admin` (the in‑memory Firestore Admin SDK mock). Tests run **in‑process** (no emulator).
+- **`packages/firestore-functions`** — implementation of `@firebase-bridge/firestore-functions` (trigger binding for `firebase-functions` v1/v2). Tests run **in‑process** (no emulator). Binding is **explicit** in tests.
+- **`packages/auth-context`** — implementation of `@firebase-bridge/auth-context` (mock invocation layer for Firebase HTTPS Cloud Functions (v1 & v2) integrating a lightweight in-memory mock of the firebase-admin/auth API). Tests run **in‑process** (no emulator). Binding is **explicit** in tests.
+- **`firestore-bridge-test-suites`** — shared, black‑box test suites that exercise Firestore behavior via public APIs. Consumed by both the mock and emulator runners.
+- **`firestore-bridge-production`** — test runner that targets the **Firebase Emulator** and forwards to `firestore-bridge-test-suites` to validate parity.
+- **`smoke/smoke-consumer`** — a tiny app that consumes the locally built packages, verifying installability, published shape, and dual CJS/ESM execution.
 
 > **Workspaces:** The root `package.json` declares workspaces:
 >
-> * `packages/*`
-> * `firestore-bridge-production`
-> * `firestore-bridge-test-suites`
-> * `smoke/*`
+> - `packages/*`
+> - `firestore-bridge-production`
+> - `firestore-bridge-test-suites`
+> - `smoke/*`
 
 ### Repository structure
 
@@ -56,7 +58,11 @@ If you find it useful and would like to support ongoing development, you can [bu
 │  │  ├─ src/
 │  │  ├─ jest.config.ts
 │  │  └─ package.json
-│  └─ firestore-functions/         # @firebase-bridge/firestore-functions (v1/v2 trigger binding)
+│  ├─ firestore-functions/         # @firebase-bridge/firestore-functions (v1/v2 trigger binding)
+│  │  ├─ src/
+│  │  ├─ jest.config.ts
+│  │  └─ package.json
+│  └─ auth-context/                 # @firebase-bridge/auth-context (v1/v2 cloud function invocation)
 │     ├─ src/
 │     ├─ jest.config.ts
 │     └─ package.json
@@ -85,9 +91,9 @@ If you find it useful and would like to support ongoing development, you can [bu
 
 ## Prerequisites
 
-* **Node.js ≥ 18** (repo uses `@types/node@18.16.9`)
-* Local install of **Nx** (invoked via `npx nx`) and **Jest** via devDependencies
-* Firebase Emulator (only needed for `firestore-bridge-production` tests)
+- **Node.js ≥ 18** (repo uses `@types/node@18.16.9`)
+- Local install of **Nx** (invoked via `npx nx`) and **Jest** via devDependencies
+- Firebase Emulator (only needed for `firestore-bridge-production` tests)
 
 Install dependencies at the repo root:
 
@@ -101,22 +107,24 @@ npm i
 
 From `package.json` (root):
 
-* **Name:** `@firebase-bridge/source` (**private**)
-* **License (root):** **Apache‑2.0**
-* **Scripts:**
+- **Name:** `@firebase-bridge/source` (**private**)
+- **License (root):** **Apache‑2.0**
+- **Scripts:**
 
-  * `npm test` → `jest --detectOpenHandles`
-  * `npm run firebase-emulators:start` → runs `./.scripts/start-emulators.js`
-* **Dependencies (runtime):**
+  - `npm test` → `jest --detectOpenHandles`
+  - `npm run firebase-emulators:start` → runs `./.scripts/start-emulators.js`
 
-  * `firebase-admin@^13.4.0`
-  * `firebase-functions@^6.4.0`
-  * `google-gax@>=5 <6`
-* **Dev dependencies (tooling excerpt):**
+- **Dependencies (runtime):**
 
-  * `nx@21.2.3`, `typescript@~5.8.2`, `jest@^29.7.0`
-  * ESLint 9 + `typescript-eslint@^8.40.0`, Prettier 2
-  * Both **@swc/jest** and **ts-jest** are available; use per-project Jest config
+  - `firebase-admin@^13.4.0`
+  - `firebase-functions@^6.4.0`
+  - `google-gax@>=5 <6`
+
+- **Dev dependencies (tooling excerpt):**
+
+  - `nx@21.2.3`, `typescript@~5.8.2`, `jest@^29.7.0`
+  - ESLint 9 + `typescript-eslint@^8.40.0`, Prettier 2
+  - Both **@swc/jest** and **ts-jest** are available; use per-project Jest config
 
 ---
 
@@ -183,14 +191,20 @@ import * as bridgeV2 from '@firebase-bridge/firestore-functions/v2';
 
 const onUserCreateV1 = v1.firestore
   .document('users/{uid}')
-  .onCreate(async (snap, ctx) => { /* ... */ });
+  .onCreate(async (snap, ctx) => {
+    /* ... */
+  });
 
-const onUserWrittenV2 = v2.firestore
-  .onDocumentWritten('users/{uid}', async (event) => { /* ... */ });
+const onUserWrittenV2 = v2.firestore.onDocumentWritten(
+  'users/{uid}',
+  async (event) => {
+    /* ... */
+  }
+);
 
 const env = new FirestoreMock();
 const ctl = env.createDatabase('proj', '(default)');
-const db  = ctl.firestore();
+const db = ctl.firestore();
 
 bridgeV1.registerTrigger(ctl, onUserCreateV1);
 bridgeV2.registerTrigger(ctl, onUserWrittenV2);
@@ -204,13 +218,13 @@ await db.collection('users').doc('u1').set({ name: 'Ada' });
 
 The mock exposes a controllable clock (`SystemTime`) to make **commit/write/update times** deterministic. Internal timestamps and `FieldValue.serverTimestamp()` respect this clock.
 
-* If your code calls `Timestamp.now()`, note that it uses the **real clock** by default. You can align global time with your test runner’s fake timers or patch `Timestamp.now()` in a scoped way.
+- If your code calls `Timestamp.now()`, note that it uses the **real clock** by default. You can align global time with your test runner’s fake timers or patch `Timestamp.now()` in a scoped way.
 
 ---
 
 ## Known limits (mock layer)
 
-* **Partitioned queries** (`CollectionGroup.getPartitions()` / `Query.getPartitions()` → GAPIC `partitionQuery`) are currently **stubbed** and return an **empty stream**.
+- **Partitioned queries** (`CollectionGroup.getPartitions()` / `Query.getPartitions()` → GAPIC `partitionQuery`) are currently **stubbed** and return an **empty stream**.
 
 ---
 
@@ -222,11 +236,11 @@ Follow this checklist when publishing any Firebase‑Bridge package.
 
 Each package must define:
 
-* `name`, `version`, and `license: "Apache‑2.0"`
-* `files` whitelist (e.g., `cjs/`, `esm/`, `LICENSE`, `NOTICE`, `README.md`, `package.json`)
-* `publishConfig.access: "public"`
-* Correct `exports` and `types` entries for both ESM and CJS
-* `sideEffects: false` unless the module performs work on import
+- `name`, `version`, and `license: "Apache‑2.0"`
+- `files` whitelist (e.g., `cjs/`, `esm/`, `LICENSE`, `NOTICE`, `README.md`, `package.json`)
+- `publishConfig.access: "public"`
+- Correct `exports` and `types` entries for both ESM and CJS
+- `sideEffects: false` unless the module performs work on import
 
 Include **LICENSE** in every package. Add a **NOTICE** file where Google‑derived code exists.
 
@@ -287,16 +301,16 @@ git push --tags
 
 ### 8. Post‑publish
 
-* Confirm packages appear on npm and can be installed directly.
-* Update GitHub releases and changelog as needed.
+- Confirm packages appear on npm and can be installed directly.
+- Update GitHub releases and changelog as needed.
 
 ---
 
 ## Contributing
 
-* Keep behavior parity with the Admin SDK and the Emulator as a priority.
-* Add/extend test cases in `firestore-bridge-test-suites` and run against both runners.
-* If behavior diverges, prefer matching the **real** Firestore semantics.
+- Keep behavior parity with the Admin SDK and the Emulator as a priority.
+- Add/extend test cases in `firestore-bridge-test-suites` and run against both runners.
+- If behavior diverges, prefer matching the **real** Firestore semantics.
 
 ---
 
@@ -304,5 +318,5 @@ git push --tags
 
 **Apache‑2.0** © 2025 Bryce Marshall — applies to the entire workspace and all published packages.
 
-* Each package ships a `LICENSE` (Apache‑2.0).
-* Packages containing adapted Google files also ship a `NOTICE` and preserve upstream headers with a modification notice.
+- Each package ships a `LICENSE` (Apache‑2.0).
+- Packages containing adapted Google files also ship a `NOTICE` and preserve upstream headers with a modification notice.
