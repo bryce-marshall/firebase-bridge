@@ -11,7 +11,7 @@ import {
   NormalizedWrite,
   NormalizedWriteResult,
   Trigger,
-  WriteMode
+  WriteMode,
 } from './_internal/data-accessor.js';
 import { StructuralDatabase } from './structural-database.js';
 
@@ -87,6 +87,20 @@ export class DatabaseDirect {
    */
   reset(): void {
     this._accessor.reset();
+  }
+
+  /**
+   * Snapshot all **existing** documents as an ordered array of document paths.
+   *
+   * @remarks
+   * The ordering matches the meta snapshot returned by {@link toMetaArray},
+   * with each entry mapped to its `path` property.
+   *
+   * @returns Array of Firestore document paths (for example,
+   *   `"users/alice"` or `"users/alice/settings/profile"`).
+   */
+  toDocumentPaths(): string[] {
+    return this.toMetaArray().map((meta) => meta.path);
   }
 
   /**

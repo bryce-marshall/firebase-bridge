@@ -194,7 +194,7 @@ A thin, synchronous façade for **direct data access** (seeding, inspection, str
   - `query<T>(q: DocumentQuery<T>): MetaDocumentExists<T>[]`
   - `toStructuralDatabase(): StructuralDatabase`
   - `fromStructuralDatabase(src: StructuralDatabase, merge?: MergeGranularity): NormalizedWriteResult`
-  - Conversion helpers: `toMetaArray()`, `toMetaMap()`, `toMap()`
+  - Conversion helpers: `toMetaArray()`, `toMetaMap()`, `toMap()`, `toDocumentPaths()`
 
 - **Single‑doc ops**
 
