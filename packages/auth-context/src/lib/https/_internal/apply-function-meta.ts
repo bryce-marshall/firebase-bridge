@@ -1,7 +1,7 @@
 import { DecodedAppCheckToken } from 'firebase-admin/app-check';
 import { DecodedIdToken } from 'firebase-admin/auth';
 import { DEFAULT_PROJECT_ID, DEFAULT_REGION } from '../../_internal/types.js';
-import { cloneDeep, defaultString } from '../../_internal/util.js';
+import { defaultString, jsonRoundTrip } from '../../_internal/util.js';
 import {
   CloudFunctionsBody,
   HttpRequestOptions,
@@ -63,8 +63,8 @@ export function applyFunctionMeta(
   const asEmulator = !!request.asEmulator;
   const onCallMode = fnOptions.onCallMode === true;
 
-  if (request.data) {
-    httpOptions.body = cloneDeep(request.data);
+  if (request.data !== undefined) {
+    httpOptions.body = jsonRoundTrip(request.data);
   }
 
   // In callable mode (or missing URL), synthesize a canonical path.

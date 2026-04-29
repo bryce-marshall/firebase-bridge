@@ -4,7 +4,11 @@ import {
   Request as V2Request,
 } from 'firebase-functions/v2/https';
 import { AuthProvider } from '../../_internal/types.js';
-import { cloneDeep, execPromise } from '../../_internal/util.js';
+import {
+  cloneDeep,
+  execPromise,
+  jsonRoundTrip,
+} from '../../_internal/util.js';
 import { mockHttpRequest } from '../../http/_internal/mock-http-request.js';
 import { mockHttpResponse } from '../../http/_internal/mock-http-response.js';
 import {
@@ -118,6 +122,7 @@ function toRequestContext<
     appCheck: generic.app?.token,
     id: auth?.token,
   });
+  serializeHttpBody(options);
   const rawRequest = mockHttpRequest(options);
   const response = mockHttpResponse();
 
@@ -164,7 +169,7 @@ function toCallableRequest<
 
   // Auth / App are surfaced on request in v2
   const callableReq: CallableRequest<TData> = {
-    data: request.data,
+    data: jsonRoundTrip(request.data),
     auth,
     rawRequest,
     acceptsStreaming: false,
@@ -175,4 +180,10 @@ function toCallableRequest<
   }
 
   return callableReq;
+}
+
+function serializeHttpBody(options: HttpRequestOptions): void {
+  if (options.body !== undefined && !Buffer.isBuffer(options.body)) {
+    options.body = jsonRoundTrip(options.body);
+  }
 }

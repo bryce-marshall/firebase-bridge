@@ -1,7 +1,11 @@
 import { HttpsFunction, Runnable } from 'firebase-functions/v1';
 import { CallableContext, Request } from 'firebase-functions/v1/https';
 import { AuthProvider } from '../../_internal/types.js';
-import { cloneDeep, execPromise } from '../../_internal/util.js';
+import {
+  cloneDeep,
+  execPromise,
+  jsonRoundTrip,
+} from '../../_internal/util.js';
 import { mockHttpRequest } from '../../http/_internal/mock-http-request.js';
 import { mockHttpResponse } from '../../http/_internal/mock-http-response.js';
 import {
@@ -64,8 +68,9 @@ export class _HttpsV1Handler<TKey extends AuthKey>
   ): Promise<TResponse> {
     const context = this._provider.context(request);
     const nativeContext = toCallableContext(request, context);
+    const data = jsonRoundTrip(request.data);
 
-    return execPromise(() => handler(request.data, nativeContext));
+    return execPromise(() => handler(data, nativeContext));
   }
 
   runCallable<
@@ -77,8 +82,9 @@ export class _HttpsV1Handler<TKey extends AuthKey>
   ): Promise<TResponse> {
     const context = this._provider.context(request);
     const nativeContext = toCallableContext(request, context);
+    const data = jsonRoundTrip(request.data);
 
-    return execPromise(() => runnable.run(request.data, nativeContext));
+    return execPromise(() => runnable.run(data, nativeContext));
   }
 }
 
@@ -114,6 +120,7 @@ function toRequestContext<
     appCheck: generic.app?.token,
     id: auth?.token,
   });
+  serializeHttpBody(options);
   const rawRequest = mockHttpRequest(options);
   const response = mockHttpResponse();
 
@@ -166,4 +173,10 @@ function toCallableContext<
   }
 
   return result;
+}
+
+function serializeHttpBody(options: HttpRequestOptions): void {
+  if (options.body !== undefined && !Buffer.isBuffer(options.body)) {
+    options.body = jsonRoundTrip(options.body);
+  }
 }

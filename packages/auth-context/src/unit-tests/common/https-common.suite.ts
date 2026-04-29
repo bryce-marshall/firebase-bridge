@@ -37,6 +37,30 @@ export function runHttpsCommonSuites(label: 'v1' | 'v2', runner: TestRunner) {
       expectCallableContextShape(_context, input);
     });
 
+    it('onCall: serializes request data through JSON before invoking the handler', async () => {
+      const createdAt = new Date('2026-04-29T03:04:05.000Z');
+      const input = { createdAt, nested: { createdAt } };
+
+      await runner.onCall(
+        {
+          key: TestIdentity.Jane,
+          data: input,
+        },
+        async (context) => {
+          const req = context.rawRequest as unknown as MockHttpRequest;
+
+          expect(context.data).toEqual({
+            createdAt: createdAt.toJSON(),
+            nested: { createdAt: createdAt.toJSON() },
+          });
+          expect(req.body).toEqual(context.data);
+          expect(context.data).not.toBe(input);
+
+          return { ok: true };
+        }
+      );
+    });
+
     // ---------------------------
     // onCall: callable-mode metadata
     // ---------------------------
@@ -119,6 +143,29 @@ export function runHttpsCommonSuites(label: 'v1' | 'v2', runner: TestRunner) {
       const body = response._getJSONData();
       expect(status).toBe(201);
       expect(body).toMatchObject({ ok: true });
+    });
+
+    it('onRequest: serializes request data through JSON before forwarding the body', async () => {
+      const createdAt = new Date('2026-04-29T03:04:05.000Z');
+
+      await runner.onRequest(
+        {
+          key: TestIdentity.Admin,
+          data: { createdAt, nested: { createdAt } },
+          options: {
+            method: 'POST',
+            path: '/unit-test/json-boundary',
+          },
+        },
+        async (req, resp) => {
+          expect(req.body).toEqual({
+            createdAt: createdAt.toJSON(),
+            nested: { createdAt: createdAt.toJSON() },
+          });
+
+          resp.status(200).json({ ok: true });
+        }
+      );
     });
 
     // ---------------------------

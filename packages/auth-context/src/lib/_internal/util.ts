@@ -84,6 +84,17 @@ export function cloneDeep<T>(v: T): T {
   return walk(v);
 }
 
+/**
+ * Clone a value through JSON serialization to mirror Firebase's network
+ * boundary for request payloads.
+ */
+export function jsonRoundTrip<T>(v: T): T {
+  const json = JSON.stringify(v);
+  if (json === undefined) return undefined as T;
+
+  return JSON.parse(json) as T;
+}
+
 const INVALID_DATE_CONSTRUCTOR_MSG = 'Invalid AuthDateConstructor';
 
 /**
