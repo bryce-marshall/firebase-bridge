@@ -38,7 +38,7 @@
     "access": "public"
   },
   "dependencies": {
-    "firebase-functions": "^6.4.0"
+    "firebase-functions": "^6.4.0 || ^7.0.0"
   },
   "peerDependencies": {
     "google-gax": ">=4.3.3 <6"
