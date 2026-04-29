@@ -1,6 +1,12 @@
 import { DocumentData, Firestore, Timestamp } from 'firebase-admin/firestore';
 import { FirestoreBridgeTestContext } from './test-context.js';
 
+function compareTimestamp(a: Timestamp, b: Timestamp): number {
+  if (a.seconds !== b.seconds) return a.seconds - b.seconds;
+
+  return a.nanoseconds - b.nanoseconds;
+}
+
 export function concurrencyVisibilitySuite(
   context: FirestoreBridgeTestContext
 ) {
@@ -19,46 +25,51 @@ export function concurrencyVisibilitySuite(
 
     const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-    it('Concurrent non-transactional writes → last-write-wins (final doc matches last arriving write)', async () => {
+    it('Concurrent non-transactional writes → last-write-wins (final doc matches latest committed write)', async () => {
       const ref = FirestoreDb.collection(COLLECTION_ID).doc(
         'concurrent-last-write-wins'
       );
 
       // Launch three writes "concurrently" but stagger their *send* time so arrival order is deterministic.
-      // We don’t await in between: they’re all in-flight together.
+      // We don’t await in between: they’re all in-flight together. The emulator/server can still commit
+      // in-flight writes in a different order, so assertions below use the observed commit times.
       const op1 = (async () => {
         await delay(10);
-        return ref.set({ tag: 'first', seq: 1 });
+        const data = { tag: 'first', seq: 1 };
+        const result = await ref.set(data);
+        return { data, result };
       })();
 
       const op2 = (async () => {
         await delay(20);
-        return ref.set({ tag: 'second', seq: 2 });
+        const data = { tag: 'second', seq: 2 };
+        const result = await ref.set(data);
+        return { data, result };
       })();
 
       const op3 = (async () => {
         await delay(30);
-        return ref.set({ tag: 'third', seq: 3 });
+        const data = { tag: 'third', seq: 3 };
+        const result = await ref.set(data);
+        return { data, result };
       })();
 
-      const [r1, r2, r3] = await Promise.all([op1, op2, op3]);
+      const writes = await Promise.all([op1, op2, op3]);
+      const latest = writes.reduce((prev, curr) =>
+        compareTimestamp(prev.result.writeTime, curr.result.writeTime) >= 0
+          ? prev
+          : curr
+      );
 
-      // Verify write times are non-decreasing in the order we *sent* them.
-      const t1 = r1.writeTime.toMillis();
-      const t2 = r2.writeTime.toMillis();
-      const t3 = r3.writeTime.toMillis();
-      expect(t1).toBeLessThanOrEqual(t2);
-      expect(t2).toBeLessThanOrEqual(t3);
-
-      // Final state should reflect the last (latest-arriving) write: seq === 3, tag === 'third'
+      // Final state should reflect the write with the latest committed writeTime.
       const snap = await ref.get();
       const data = snap.data() as DocumentData;
-      expect(data.seq).toBe(3);
-      expect(data.tag).toBe('third');
+      expect(data.seq).toBe(latest.data.seq);
+      expect(data.tag).toBe(latest.data.tag);
 
-      // The snapshot's updateTime should match the last write's writeTime.
-      const finalUpdateTime = (snap.updateTime as Timestamp).toMillis();
-      expect(finalUpdateTime).toBe(t3);
+      // The snapshot's updateTime should match the latest write's writeTime.
+      const finalUpdateTime = snap.updateTime as Timestamp;
+      expect(finalUpdateTime.isEqual(latest.result.writeTime)).toBe(true);
     });
 
     it('Assert updateTime reflects ordering across sequential overwrites (monotonic, last write wins)', async () => {
