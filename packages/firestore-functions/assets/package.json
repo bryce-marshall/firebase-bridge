@@ -77,7 +77,7 @@
   ],
   "peerDependencies": {
     "firebase-admin": "^13.4.0",
-    "firebase-functions": "^6.4.0",
+    "firebase-functions": "^6.4.0 || ^7.0.0",
     "@firebase-bridge/firestore-admin": "0.0.x"
   },
   "publishConfig": {
