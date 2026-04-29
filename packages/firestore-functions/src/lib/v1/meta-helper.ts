@@ -1,9 +1,17 @@
 import { CloudFunction } from 'firebase-functions/v1';
-import { ManifestEndpoint } from 'node_modules/firebase-functions/lib/runtime/manifest.js';
 import {
   GenericTriggerMeta,
   TriggerKind,
 } from '../_internal/trigger-runner.js';
+
+interface ManifestEndpointLike {
+  eventTrigger?: {
+    eventType?: string;
+    eventFilters?: {
+      resource?: unknown;
+    };
+  };
+}
 
 /**
  * Lightweight representation of a Firebase Functions trigger annotation.
@@ -170,7 +178,7 @@ function mapKinds(eventType: string | undefined): TriggerKind[] {
  *          metadata does not describe a Firestore document event.
  */
 export function getTriggerMeta(
-  manifest: ManifestEndpoint | undefined,
+  manifest: ManifestEndpointLike | undefined,
   annotation?: TriggerAnnotationLike
 ): Partial<GenericTriggerMeta> {
   const eventType =

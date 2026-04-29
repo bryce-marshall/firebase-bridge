@@ -1,6 +1,4 @@
-import { Expression } from 'firebase-functions/params';
 import type { CloudEvent, CloudFunction } from 'firebase-functions/v2';
-import { ManifestEndpoint } from 'node_modules/firebase-functions/lib/runtime/manifest.js';
 import {
   GenericTriggerMeta,
   TriggerKind,
@@ -29,7 +27,7 @@ function mapKinds(eventType: string | undefined): TriggerKind[] {
  * A CloudEvent filter expressed as an object map (common in v2 endpoint manifests),
  * e.g. `{ database: '(default)', document: 'users/{userId}/profile' }`.
  */
-type EventFilterObject = Readonly<Record<string, string | undefined>>;
+type EventFilterObject = Readonly<Record<string, unknown>>;
 
 /**
  * A CloudEvent filter expressed as an array of key/value entries (older / alt form),
@@ -39,7 +37,7 @@ type EventFilterObject = Readonly<Record<string, string | undefined>>;
 type EventFilterArray = ReadonlyArray<
   Readonly<{
     attribute?: string;
-    value?: string;
+    value?: unknown;
     operator?: string;
   }>
 >;
@@ -49,7 +47,7 @@ type EventFilterArray = ReadonlyArray<
  * For Firestore, this commonly carries the document route template, e.g.:
  * `{ document: 'users/{userId}/data/profile' }`.
  */
-type EventFilterPathPatterns = Readonly<Record<string, string | undefined>>;
+type EventFilterPathPatterns = Readonly<Record<string, unknown>>;
 
 /**
  * Minimal, public-safe shape for a v2 Firestore event trigger section.
@@ -76,14 +74,19 @@ type ResetValue = unknown;
  * Minimal public-safe shape for the internal function metadata.
  * Covers both modern `__endpoint` and legacy `__trigger` layouts.
  */
-interface EventTriggerLike {
-  eventFilters: Record<string, string | Expression<string>>;
-  eventFilterPathPatterns?: Record<string, string | Expression<string>>;
+interface EventTriggerLike extends Partial<EventTrigger> {
+  eventFilters?: EventFilterObject | EventFilterArray;
+  eventFilterPathPatterns?: EventFilterPathPatterns;
   channel?: string;
-  eventType: string;
-  retry: boolean | Expression<boolean> | ResetValue;
+  eventType?: string;
+  retry?: boolean | ResetValue;
   region?: string;
   serviceAccountEmail?: string | ResetValue;
+  resource?: string;
+}
+
+interface ManifestEndpointLike {
+  eventTrigger?: EventTriggerLike;
 }
 
 /**
@@ -127,7 +130,7 @@ function extractRouteFromEventTrigger(et: EventTriggerLike): string {
   }
 
   // Fallback to v1-style resource
-  const res: string | undefined = (et as EventTrigger)?.resource;
+  const res = et.resource;
   if (typeof res === 'string') {
     const i = res.indexOf('/documents/');
     if (i >= 0) return res.slice(i + '/documents/'.length);
@@ -159,7 +162,7 @@ function extractRouteFromEventTrigger(et: EventTriggerLike): string {
  *          `route` and `kinds` values.
  */
 export function getTriggerMeta(
-  ep: ManifestEndpoint | undefined
+  ep: ManifestEndpointLike | undefined
 ): Partial<GenericTriggerMeta> {
   const et = ep?.eventTrigger;
   const route = et ? extractRouteFromEventTrigger(et) : undefined;
