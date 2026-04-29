@@ -588,6 +588,9 @@ export interface AuthData {
 
   /** The decoded ID token for the caller. */
   token: DecodedIdToken;
+
+  /** The raw encoded ID token used to invoke the function. */
+  rawToken: string;
 }
 
 /**

@@ -503,6 +503,15 @@ describe('Auth (BaseAuth integration)', () => {
       expect(decoded.event_id).toBe('evt-123');
       // `applyToJSON` is invoked internally; basic shape is sufficient here.
     });
+
+    it('buildAuthData includes the raw encoded token', () => {
+      const authManager = createManagerWithFixedNow();
+      authManager.register('u1', { uid: 'raw-token-user' });
+
+      const authData = buildAuthData(authManager.context({ key: 'u1' }));
+
+      expect(authData?.rawToken).toBe(encodeIdToken(authData!.token));
+    });
   });
 
   describe('tenant-aware Auth', () => {

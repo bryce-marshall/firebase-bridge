@@ -6,6 +6,7 @@ import {
   AuthenticatedRequestContext,
   UnauthenticatedRequestContext,
 } from '../../types.js';
+import { encodeIdToken } from '../jwt.js';
 
 /**
  * Http header keys (standard and custom) replicating the Firebase environment.
@@ -32,7 +33,7 @@ export function formatIss(projectNumber: string): string {
  * Build {@link AuthData} for callable handlers from a generic auth context.
  *
  * @param context - The version-agnostic auth context produced by the provider.
- * @returns An `AuthData` object containing `uid` and a `DecodedIdToken`.
+ * @returns An `AuthData` object containing `uid`, a decoded token, and the raw encoded token.
  *
  * @remarks
  * - The returned `uid` mirrors the identity’s `uid` (i.e., the `sub` claim).
@@ -46,7 +47,11 @@ export function buildAuthData(
     return undefined;
   const token = buildToken(context as AuthenticatedRequestContext);
 
-  return { uid: token.uid as string, token };
+  return {
+    uid: token.uid as string,
+    token,
+    rawToken: encodeIdToken(token),
+  };
 }
 
 /**
