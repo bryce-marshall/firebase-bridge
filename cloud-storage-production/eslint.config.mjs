@@ -1,4 +1,4 @@
-import baseConfig from '../../eslint.config.mjs';
+import baseConfig from '../eslint.config.mjs';
 
 export default [
   ...baseConfig,
@@ -9,18 +9,13 @@ export default [
         'error',
         {
           ignoredFiles: ['{projectRoot}/eslint.config.{js,cjs,mjs,ts,cts,mts}'],
-          ignoredDependencies: ['cloud-storage-test-suites'],
+          ignoredDependencies: [
+            '@firebase-bridge/cloud-storage',
+            'cloud-storage-test-suites',
+            'firebase-admin',
+          ],
         },
       ],
-    },
-    languageOptions: {
-      parser: await import('jsonc-eslint-parser'),
-    },
-  },
-  {
-    files: ['assets/**/package.json'],
-    rules: {
-      '@nx/dependency-checks': 'off',
     },
     languageOptions: {
       parser: await import('jsonc-eslint-parser'),

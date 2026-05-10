@@ -27,7 +27,7 @@ import {
 type ProviderBucket = {
   name: string;
   file(path: string): ProviderFile;
-  getFiles(options?: Record<string, unknown>): Promise<[ProviderFile[], unknown, { pageToken?: string }?]>;
+  getFiles(options?: Record<string, unknown>): Promise<[ProviderFile[], { pageToken?: string } | undefined, unknown]>;
 };
 
 type ProviderFile = {
@@ -141,6 +141,7 @@ class FirebaseCloudStorageBucket implements CloudStorageBucket {
     validatePath(path);
     try {
       const file = this.file(path);
+      await assertProviderPrecondition(file, path, options?.precondition);
       await file.save(toBuffer(data), {
         metadata: toProviderWriteMetadata(options?.metadata),
         preconditionOpts: toProviderPrecondition(options?.precondition),
@@ -171,6 +172,11 @@ class FirebaseCloudStorageBucket implements CloudStorageBucket {
         throw cause;
       });
       if (!metadata) return { deleted: false };
+      await assertProviderPrecondition(
+        this.file(path),
+        path,
+        options?.precondition
+      );
       await this.file(path).delete({
         ignoreNotFound: options?.ignoreMissing === true,
         preconditionOpts: toProviderPrecondition(options?.precondition),
@@ -202,6 +208,7 @@ class FirebaseCloudStorageBucket implements CloudStorageBucket {
   ): Promise<CloudStorageObjectMetadata> {
     validatePath(path);
     try {
+      await assertProviderPrecondition(this.file(path), path, metadata.precondition);
       const [updated] = await this.file(path).setMetadata(
         toProviderWriteMetadata(metadata) ?? {},
         {
@@ -216,10 +223,11 @@ class FirebaseCloudStorageBucket implements CloudStorageBucket {
 
   async list(options?: CloudStorageListOptions): Promise<CloudStorageListResult> {
     try {
-      const [files, , response] = await this.bucketRef.getFiles({
+      const [files, nextQuery] = await this.bucketRef.getFiles({
         prefix: options?.prefix,
         maxResults: options?.pageSize,
         pageToken: options?.pageToken,
+        autoPaginate: false,
       });
       const objects = await Promise.all(
         files.map(async (file) => {
@@ -229,7 +237,7 @@ class FirebaseCloudStorageBucket implements CloudStorageBucket {
       );
       return {
         objects,
-        nextPageToken: response?.pageToken,
+        nextPageToken: nextQuery?.pageToken,
       };
     } catch (cause) {
       throw mapProviderError(cause, 'Unable to list Cloud Storage objects.');
@@ -357,6 +365,48 @@ function toProviderPrecondition(
         ifMetagenerationMatch: precondition.metageneration,
       };
   }
+}
+
+async function assertProviderPrecondition(
+  file: ProviderFile,
+  path: string,
+  precondition?: CloudStoragePrecondition
+): Promise<void> {
+  if (!precondition || precondition.type === 'none') return;
+  const [exists] = await file.exists();
+  if (precondition.type === 'does-not-exist') {
+    if (exists) throw preconditionFailed(path);
+    return;
+  }
+  if (!exists) throw preconditionFailed(path);
+  const [metadata] = await file.getMetadata();
+  const generation = String(metadata.generation ?? '');
+  const metageneration = String(metadata.metageneration ?? '');
+  switch (precondition.type) {
+    case 'generation-match':
+      if (generation !== precondition.generation) throw preconditionFailed(path);
+      break;
+    case 'metageneration-match':
+      if (metageneration !== precondition.metageneration) {
+        throw preconditionFailed(path);
+      }
+      break;
+    case 'generation-and-metageneration-match':
+      if (
+        generation !== precondition.generation ||
+        metageneration !== precondition.metageneration
+      ) {
+        throw preconditionFailed(path);
+      }
+      break;
+  }
+}
+
+function preconditionFailed(path: string): CloudStorageError {
+  return cloudStorageError(
+    'storage/precondition-failed',
+    `Cloud Storage precondition failed for "${path}".`
+  );
 }
 
 function toMetadata(

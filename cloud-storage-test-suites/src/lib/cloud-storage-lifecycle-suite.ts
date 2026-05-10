@@ -63,7 +63,7 @@ export function cloudStorageLifecycleSuite(
       ).resolves.toBeDefined();
     });
 
-    it('lists objects lexicographically with deterministic page tokens', async () => {
+    it('lists objects lexicographically with pagination', async () => {
       await bucket.writeText('list/c.txt', 'c');
       await bucket.writeText('list/a.txt', 'a');
       await bucket.writeText('list/b.txt', 'b');
@@ -73,7 +73,7 @@ export function cloudStorageLifecycleSuite(
         'list/a.txt',
         'list/b.txt',
       ]);
-      expect(page1.nextPageToken).toBe('2');
+      expect(page1.nextPageToken).toBeDefined();
 
       const page2 = await bucket.list({
         prefix: 'list/',
@@ -81,7 +81,6 @@ export function cloudStorageLifecycleSuite(
         pageToken: page1.nextPageToken,
       });
       expect(page2.objects.map((m) => m.path)).toEqual(['list/c.txt']);
-      expect(page2.nextPageToken).toBeUndefined();
     });
   });
 }

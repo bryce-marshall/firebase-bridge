@@ -1,4 +1,4 @@
-import { cloudStorageLifecycleSuite } from 'firestore-bridge-test-suites';
+import { cloudStorageLifecycleSuite } from 'cloud-storage-test-suites';
 import { StorageMock } from '../index.js';
 
 const env = new StorageMock();

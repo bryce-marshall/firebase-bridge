@@ -8,13 +8,13 @@
     "emitDeclarationOnly": false,
     "forceConsistentCasingInFileNames": true,
     "noUnusedLocals": false,
-    "types": [
-      "jest",
-      "node"
-    ]
+    "paths": {
+      "@firebase-bridge/cloud-storage": [
+        "../packages/cloud-storage/dist/esm/index.d.ts"
+      ]
+    },
+    "types": ["jest", "node"]
   },
-  "include": [
-    "src/**/*.ts"
-  ],
+  "include": ["src/**/*.ts"],
   "references": []
 }

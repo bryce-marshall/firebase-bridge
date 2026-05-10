@@ -1,5 +1,5 @@
 {
-  "name": "firestore-bridge-test-suites",
+  "name": "cloud-storage-production",
   "version": "0.0.1",
   "private": true,
   "main": "./dist/index.js",
@@ -16,9 +16,14 @@
     }
   },
   "dependencies": {
+    "@firebase-bridge/cloud-storage": "0.0.1",
+    "cloud-storage-test-suites": "0.0.1",
     "firebase-admin": "^13.4.0",
-    "google-gax": ">=5 <6",
-    "@jest/globals": "29.7.0",
     "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@firebase-bridge/cloud-storage": "0.0.1",
+    "cloud-storage-test-suites": "0.0.1",
+    "firebase-admin": "^13.4.0"
   }
 }

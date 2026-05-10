@@ -51,6 +51,8 @@
   },
   "workspaces": [
     "packages/*",
+    "cloud-storage-production",
+    "cloud-storage-test-suites",
     "firestore-bridge-production",
     "firestore-bridge-test-suites",
     "smoke/*"
