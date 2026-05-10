@@ -24,9 +24,9 @@ import {
   CloudStorageWriteTextOptions,
 } from '@firebase-bridge/cloud-storage';
 import { Listeners } from './listeners.js';
-import { SystemTime } from './system-time.js';
 import {
   CreateStorageOptions,
+  StorageMockOptions,
   StorageChangeListener,
   StorageChangeRecord,
   StorageController,
@@ -37,6 +37,7 @@ import {
   StorageOperationRecord,
   StorageSeedObjectOptions,
   StorageTestClock,
+  StorageTimeSource,
   StorageTestObjectSnapshot,
 } from './types.js';
 
@@ -55,9 +56,13 @@ class BucketState {
 }
 
 export class StorageMock {
-  readonly systemTime = new SystemTime();
   private readonly buckets = new Map<string, BucketState>();
   private readonly controllers = new Set<InMemoryStorageController>();
+  private readonly nowSource: StorageTimeSource;
+
+  constructor(options?: StorageMockOptions) {
+    this.nowSource = options?.now ?? (() => Date.now());
+  }
 
   createStorage(options?: CreateStorageOptions): StorageController {
     const ctrl = new InMemoryStorageController(this, options);
@@ -97,6 +102,10 @@ export class StorageMock {
   maybeBucket(bucketId: string): BucketState | undefined {
     return this.buckets.get(bucketId);
   }
+
+  now(): number {
+    return this.nowSource();
+  }
 }
 
 class InMemoryStorageController implements StorageController {
@@ -104,7 +113,7 @@ class InMemoryStorageController implements StorageController {
   private readonly lifecycleListeners = new Listeners<StorageLifecycleEventArg>();
   private readonly operationLog: StorageOperationRecord[] = [];
   private readonly failures: StorageFailureRule[] = [];
-  private clock: StorageTestClock;
+  private nowSource: StorageTimeSource;
   private _epoch = 0;
 
   readonly defaultBucket: CloudStorageBucketId;
@@ -118,7 +127,7 @@ class InMemoryStorageController implements StorageController {
     this.defaultBucket = options?.defaultBucket ?? DEFAULT_BUCKET;
     this.projectId = options?.projectId ?? DEFAULT_PROJECT;
     this.location = options?.location ?? DEFAULT_LOCATION;
-    this.clock = mock.systemTime;
+    this.nowSource = () => mock.now();
   }
 
   get epoch(): number {
@@ -231,8 +240,9 @@ class InMemoryStorageController implements StorageController {
     this.failures.push(rule);
   }
 
-  setClock(clock: StorageTestClock): void {
-    this.clock = clock;
+  setClock(clock: StorageTestClock | StorageTimeSource): void {
+    this.nowSource =
+      typeof clock === 'function' ? clock : () => clock.now();
   }
 
   onObjectChange(listener: StorageChangeListener): () => void {
@@ -409,7 +419,7 @@ class InMemoryStorageController implements StorageController {
     const previous = options.previous?.metadata;
     const bucket = this.mock.getBucket(bucketId);
     const generation = options.generation ?? String(bucket.nextGeneration++);
-    const now = this.clock.now();
+    const now = this.nowDate();
     const createdAt = previous?.createdAt ?? now;
     const customMetadata = input?.customMetadata ?? previous?.customMetadata ?? {};
     const metadata = {
@@ -495,7 +505,7 @@ class InMemoryStorageController implements StorageController {
       kind,
       bucketId: metadata.bucketId,
       path: metadata.path,
-      eventTime: this.clock.now(),
+      eventTime: this.nowDate(),
       metadata,
       previousMetadata,
     });
@@ -536,11 +546,15 @@ class InMemoryStorageController implements StorageController {
         operation,
         bucketId,
         path,
-        at: this.clock.now(),
+        at: this.nowDate(),
         success,
         errorCode,
       })
     );
+  }
+
+  private nowDate(): Date {
+    return new Date(this.nowSource());
   }
 }
 

@@ -11,8 +11,9 @@ import { registerTrigger as registerV2 } from '../lib/v2/index.js';
 
 describe('StorageMock', () => {
   it('supports object lifecycle operations through bucket and object handles', async () => {
-    const env = new StorageMock();
-    env.systemTime.constant(new Date('2026-01-01T00:00:00.000Z'));
+    const env = new StorageMock({
+      now: () => Date.parse('2026-01-01T00:00:00.000Z'),
+    });
     const ctrl = env.createStorage({ defaultBucket: 'imports.test' });
     const bucket = ctrl.service().bucket();
 

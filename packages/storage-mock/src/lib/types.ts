@@ -25,6 +25,10 @@ export interface CreateStorageOptions {
   readonly location?: string;
 }
 
+export interface StorageMockOptions {
+  readonly now?: () => number;
+}
+
 export interface StorageChangeRecord extends CloudStorageObjectEvent {
   readonly epoch: number;
 }
@@ -71,8 +75,10 @@ export interface StorageTestObjectSnapshot {
   readonly metadata: CloudStorageObjectMetadata;
 }
 
+export type StorageTimeSource = () => number;
+
 export interface StorageTestClock {
-  now(): Date;
+  now(): number;
 }
 
 export interface StorageTestControl {
@@ -101,7 +107,7 @@ export interface StorageTestControl {
   getOperationLog(): readonly StorageOperationRecord[];
   clearOperationLog(): void;
   failNext(rule: StorageFailureRule): void;
-  setClock(clock: StorageTestClock): void;
+  setClock(clock: StorageTestClock | StorageTimeSource): void;
 }
 
 export interface StorageController extends StorageTestControl {
