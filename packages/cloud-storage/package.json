@@ -1,0 +1,100 @@
+{
+  "name": "@firebase-bridge/cloud-storage",
+  "version": "0.0.1",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Cloud Storage abstraction and Firebase adapter utilities for Firebase Bridge.",
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "nx build cloud-storage",
+    "build:esm": "nx run cloud-storage:build-esm",
+    "build:cjs": "nx run cloud-storage:build-cjs",
+    "prepublishOnly": "nx build cloud-storage && node ../../tools/prepare-publish.mjs",
+    "publish:pkg": "npm publish ./dist --access public",
+    "pack:dry": "npm pack ./dist --dry-run"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/esm/index.d.ts",
+      "require": "./dist/cjs/index.js",
+      "import": "./dist/esm/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "^6.4.0 || ^7.0.0"
+  },
+  "devDependencies": {
+    "@jest/globals": "29.7.0",
+    "typescript": ">=5.5 <6",
+    "@types/node": "^20.0.0"
+  },
+  "nx": {
+    "targets": {
+      "build-esm": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "tsc -p build.esm.tsconfig.json --pretty false",
+          "cwd": "{projectRoot}"
+        },
+        "outputs": [
+          "{projectRoot}/dist/esm"
+        ]
+      },
+      "build-cjs": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "npx tsc -p build.cjs.tsconfig.json --pretty false",
+          "cwd": "{projectRoot}"
+        },
+        "outputs": [
+          "{projectRoot}/dist/cjs"
+        ]
+      },
+      "post-build": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "{projectRoot}",
+          "command": "node .scripts/post-build.mjs"
+        },
+        "outputs": [
+          "{projectRoot}/dist/package.json"
+        ]
+      },
+      "build": {
+        "executor": "nx:run-commands",
+        "options": {
+          "commands": [
+            "nx run cloud-storage:clean",
+            "nx run cloud-storage:build-esm",
+            "nx run cloud-storage:build-cjs",
+            "nx run cloud-storage:post-build"
+          ],
+          "parallel": false
+        },
+        "outputs": [
+          "{projectRoot}/dist/esm",
+          "{projectRoot}/dist/cjs"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "rootDir": "src",
+    "tsBuildInfoFile": "dist/tsconfig.lib.tsbuildinfo",
+    "emitDeclarationOnly": false,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"],
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "paths": {
+      "@firebase-bridge/cloud-storage": [
+        "../cloud-storage/dist/esm/index.d.ts"
+      ]
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "references": [],
+  "exclude": [
+    "jest.config.cjs",
+    "src/unit-tests/**",
+    "src/**/*.spec.ts",
+    "src/**/*.test.ts"
+  ]
+}

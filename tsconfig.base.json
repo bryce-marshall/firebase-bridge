@@ -26,6 +26,13 @@
       "@firebase-bridge/firestore-functions": [
         "packages/firestore-functions/dist/index.d.ts"
       ],
+      "@firebase-bridge/cloud-storage": [
+        "packages/cloud-storage/src/index.ts"
+      ],
+      "@firebase-bridge/storage-mock": [
+        "packages/storage-mock/src/index.ts"
+      ],
+      "@firebase-bridge/storage-mock/*": ["packages/storage-mock/src/*"],
       "@gcf/firestore-protos": [
         "../../node_modules/@google-cloud/firestore/types/protos/firestore_v1_proto_api.d.ts"
       ],

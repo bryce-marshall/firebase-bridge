@@ -1,0 +1,30 @@
+{
+  "name": "@firebase-bridge/cloud-storage",
+  "version": "0.0.1",
+  "license": "Apache-2.0",
+  "description": "Cloud Storage abstraction and Firebase adapter utilities for Firebase Bridge.",
+  "type": "module",
+  "main": "./cjs/index.js",
+  "module": "./esm/index.js",
+  "types": "./esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./esm/index.d.ts",
+      "require": "./cjs/index.js",
+      "import": "./esm/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "^6.4.0 || ^7.0.0"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "@firebase-bridge/storage-mock",
+  "version": "0.0.1",
+  "license": "Apache-2.0",
+  "description": "In-memory Cloud Storage mock and trigger harness for Firebase Bridge.",
+  "type": "module",
+  "main": "./cjs/index.js",
+  "module": "./esm/index.js",
+  "types": "./esm/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./esm/index.d.ts",
+      "require": "./cjs/index.js",
+      "import": "./esm/index.js"
+    },
+    "./v1": {
+      "types": "./esm/lib/v1/index.d.ts",
+      "require": "./cjs/lib/v1/index.js",
+      "import": "./esm/lib/v1/index.js"
+    },
+    "./v2": {
+      "types": "./esm/lib/v2/index.d.ts",
+      "require": "./cjs/lib/v2/index.js",
+      "import": "./esm/lib/v2/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@firebase-bridge/cloud-storage": "^0.0.1"
+  },
+  "peerDependencies": {
+    "firebase-functions": "^6.4.0 || ^7.0.0"
+  }
+}
