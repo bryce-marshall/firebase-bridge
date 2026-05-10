@@ -316,7 +316,7 @@ git push --tags
 
 ## License
 
-**Apache‑2.0** © 2025 Bryce Marshall — applies to the entire workspace and all published packages.
+**Apache‑2.0** © 2026 Bryce Marshall — applies to the entire workspace and all published packages.
 
 - Each package ships a `LICENSE` (Apache‑2.0).
 - Packages containing adapted Google files also ship a `NOTICE` and preserve upstream headers with a modification notice.

@@ -1,6 +1,6 @@
 @firebase-bridge/firestore-admin
 
-Copyright (c) 2025 Bryce Marshall
+Copyright (c) 2026 Bryce Marshall
 All rights reserved.
 
 This product includes portions of the Google Cloud Firestore Node.js client library
@@ -11,4 +11,4 @@ Adapted files / declarations:
 - src/lib/_internal/firestore/pool.ts   → adapted for internal use because the type is not exported by the Google package
 - src/lib/_internal/firestore/serializer.ts  → Typescript interface adaptation
 
-Modifications © 2025 Bryce Marshall.
+Modifications © 2026 Bryce Marshall.

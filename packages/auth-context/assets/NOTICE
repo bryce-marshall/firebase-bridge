@@ -1,6 +1,6 @@
 @firebase-bridge/auth-context
 
-Copyright (c) 2025 Bryce Marshall
+Copyright (c) 2026 Bryce Marshall
 Licensed under the Apache License, Version 2.0.
 
 This product includes adapted portions of the node-mocks-http library
@@ -9,4 +9,4 @@ This product includes adapted portions of the node-mocks-http library
 Adapted files / declarations:
 - src/lib/http/types.ts — MockHttpResponse type extends node-mocks-http MockResponse methods.
 
-Modifications © 2025 Bryce Marshall.
+Modifications © 2026 Bryce Marshall.

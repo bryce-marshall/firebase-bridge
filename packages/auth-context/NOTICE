@@ -1,6 +1,6 @@
 @firebase-bridge/auth-context
 
-Copyright (c) 2025 Bryce Marshall
+Copyright (c) 2026 Bryce Marshall
 All rights reserved.
 
 This product includes portions of the Google Cloud Firestore Node.js client library...
@@ -8,4 +8,4 @@ This product includes portions of the Google Cloud Firestore Node.js client libr
 
 Adapted files / declarations:
 
-Modifications © 2025 Bryce Marshall.
+Modifications © 2026 Bryce Marshall.

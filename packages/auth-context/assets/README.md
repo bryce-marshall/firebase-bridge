@@ -1083,7 +1083,7 @@ Minimal-maintainer mode. Issues welcome; PRs for fixes/docs.
 
 ## License
 
-Apache-2.0 © 2025 Bryce Marshall
+Apache-2.0 © 2026 Bryce Marshall
 
 ---
 

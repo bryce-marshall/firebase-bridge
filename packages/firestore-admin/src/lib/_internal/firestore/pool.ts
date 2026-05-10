@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * Modifications Copyright (c) 2025 Bryce Marshall
+ * Modifications Copyright (c) 2026 Bryce Marshall
  */
 
 // Adapted from https://github.com/googleapis/nodejs-firestore/blob/main/dev/src/pool.ts
