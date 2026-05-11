@@ -1,6 +1,17 @@
 import { FirebaseCloudStorageService } from '../index.js';
 
 describe('FirebaseCloudStorageService adapter error mapping', () => {
+  it('validates bucket ids before calling the provider', () => {
+    const service = new FirebaseCloudStorageService(fakeStorage({}));
+
+    expect(() => service.bucket('')).toThrow(
+      expect.objectContaining({ code: 'storage/invalid-bucket' })
+    );
+    expect(() => service.bucket('bad/bucket')).toThrow(
+      expect.objectContaining({ code: 'storage/invalid-bucket' })
+    );
+  });
+
   it('maps provider 403 errors to storage/permission-denied', async () => {
     const service = new FirebaseCloudStorageService(
       fakeStorage({

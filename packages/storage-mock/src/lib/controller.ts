@@ -493,7 +493,7 @@ class InMemoryStorageController implements StorageController {
   }
 
   private assertPath(path: string): void {
-    if (!path || path.startsWith('/')) {
+    if (!path || path.startsWith('/') || containsControlCharacter(path)) {
       throw cloudStorageError('storage/invalid-path', `Invalid object path "${path}".`);
     }
   }
@@ -566,6 +566,7 @@ class InMemoryCloudStorageService implements CloudStorageService {
   constructor(private readonly ctrl: InMemoryStorageController) {}
 
   bucket(bucketId?: CloudStorageBucketId): CloudStorageBucket {
+    assertBucketId(bucketId);
     return new InMemoryCloudStorageBucket(
       this.ctrl,
       bucketId ?? this.ctrl.defaultBucket
@@ -729,4 +730,23 @@ function snapshot(
 
 function hash(value: string): string {
   return createHash('sha1').update(value).digest('base64url');
+}
+
+function assertBucketId(bucketId: string | undefined): void {
+  if (
+    bucketId !== undefined &&
+    (!bucketId || bucketId.includes('/') || containsControlCharacter(bucketId))
+  ) {
+    throw cloudStorageError(
+      'storage/invalid-bucket',
+      `Invalid bucket id "${bucketId}".`
+    );
+  }
+}
+
+function containsControlCharacter(value: string): boolean {
+  return [...value].some((char) => {
+    const code = char.charCodeAt(0);
+    return code <= 31 || code === 127;
+  });
 }

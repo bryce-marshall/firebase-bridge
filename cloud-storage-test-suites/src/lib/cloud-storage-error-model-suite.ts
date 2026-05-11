@@ -25,8 +25,24 @@ export function cloudStorageErrorModelSuite(
       await expectStorageError(bucket.exists(''), 'storage/invalid-path');
       await expectStorageError(bucket.read('/leading-slash.txt'), 'storage/invalid-path');
       await expectStorageError(
+        bucket.writeText('bad\u0000path.txt', 'nope'),
+        'storage/invalid-path'
+      );
+      await expectStorageError(
         bucket.writeText('', 'nope'),
         'storage/invalid-path'
+      );
+    });
+
+    it('maps invalid bucket ids to stable storage errors', () => {
+      expect(() => context.service().bucket('')).toThrow(
+        expect.objectContaining({ code: 'storage/invalid-bucket' })
+      );
+      expect(() => context.service().bucket('bad/bucket')).toThrow(
+        expect.objectContaining({ code: 'storage/invalid-bucket' })
+      );
+      expect(() => context.service().bucket('bad\u0000bucket')).toThrow(
+        expect.objectContaining({ code: 'storage/invalid-bucket' })
       );
     });
 

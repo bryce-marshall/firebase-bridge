@@ -79,6 +79,7 @@ export class FirebaseCloudStorageService implements CloudStorageService {
   constructor(private readonly storage: Storage) {}
 
   bucket(bucketId?: CloudStorageBucketId): CloudStorageBucket {
+    validateBucketId(bucketId);
     try {
       return new FirebaseCloudStorageBucket(
         this.storage.bucket(bucketId) as unknown as ProviderBucket
@@ -331,12 +332,31 @@ class FirebaseCloudStorageObject implements CloudStorageObject {
 }
 
 function validatePath(path: string): void {
-  if (!path || path.startsWith('/')) {
+  if (!path || path.startsWith('/') || containsControlCharacter(path)) {
     throw cloudStorageError(
       'storage/invalid-path',
       `Invalid Cloud Storage object path "${path}".`
     );
   }
+}
+
+function validateBucketId(bucketId: string | undefined): void {
+  if (
+    bucketId !== undefined &&
+    (!bucketId || bucketId.includes('/') || containsControlCharacter(bucketId))
+  ) {
+    throw cloudStorageError(
+      'storage/invalid-bucket',
+      `Invalid Cloud Storage bucket id "${bucketId}".`
+    );
+  }
+}
+
+function containsControlCharacter(value: string): boolean {
+  return [...value].some((char) => {
+    const code = char.charCodeAt(0);
+    return code <= 31 || code === 127;
+  });
 }
 
 function toBuffer(data: CloudStorageWritableData): Buffer {
