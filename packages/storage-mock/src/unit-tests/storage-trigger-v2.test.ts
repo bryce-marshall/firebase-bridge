@@ -145,6 +145,34 @@ describe('StorageMock v2 direct trigger registration', () => {
     disposeOne();
     disposeTwo();
   });
+
+  it('reports handler errors through onError and swallows onError failures', async () => {
+    const ctrl = new StorageMock().createStorage({ defaultBucket: 'v2.test' });
+    const bucket = ctrl.service().bucket();
+    const errors: unknown[] = [];
+
+    registerTrigger(
+      ctrl,
+      onObjectFinalized({ bucket: 'v2.test' }, () => {
+        throw new Error('handler failed');
+      }),
+      {
+        onError(arg) {
+          errors.push(arg);
+          throw new Error('error watcher failed');
+        },
+      }
+    );
+
+    await bucket.writeText('handler-error.csv', 'error');
+    await flush();
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      origin: StorageTriggerErrorOrigin.Execute,
+      arg: { path: 'handler-error.csv' },
+    });
+  });
 });
 
 function flush(): Promise<void> {

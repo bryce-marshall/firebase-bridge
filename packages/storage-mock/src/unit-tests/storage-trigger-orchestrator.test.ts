@@ -144,6 +144,18 @@ describe('StorageTriggerOrchestrator', () => {
       'Object disposed.'
     );
     expect(() => orchestrator.waitOne(Key.Finalized)).toThrow('Object disposed.');
+    expect(() => orchestrator.attach()).toThrow('Object disposed.');
+    expect(() => orchestrator.on(Key.Finalized, () => undefined)).toThrow(
+      'Object disposed.'
+    );
+    expect(() => orchestrator.observeAll({})).toThrow('Object disposed.');
+    expect(() => orchestrator.onAll(() => undefined)).toThrow('Object disposed.');
+    expect(() => orchestrator.waitError(Key.Deleted, () => true)).toThrow(
+      'Object disposed.'
+    );
+    expect(() => orchestrator.waitOneError(Key.Deleted)).toThrow(
+      'Object disposed.'
+    );
   });
 
   it('cancels and times out waiters deterministically', async () => {
@@ -198,6 +210,37 @@ describe('StorageTriggerOrchestrator', () => {
     expect(() => orchestrator.reset()).not.toThrow();
     expect(() => orchestrator.dispose()).not.toThrow();
     expect(orchestrator.isDisposed).toBe(true);
+  });
+
+  it('reset clears stats and reattaches triggers', async () => {
+    const ctrl = new StorageMock().createStorage({ defaultBucket: 'orch.test' });
+    const bucket = ctrl.service().bucket();
+    const calls: string[] = [];
+    const orchestrator = new StorageTriggerOrchestrator<Key>(ctrl, (reg) => {
+      reg.v2(
+        Key.Finalized,
+        onObjectFinalized({ bucket: 'orch.test' }, (event) => {
+          calls.push(event.data.name);
+        })
+      );
+    });
+
+    await bucket.writeText('before-reset.txt', 'before');
+    await flush();
+    expect(orchestrator.getStats(Key.Finalized).completedCount).toBe(1);
+
+    orchestrator.reset();
+    expect(orchestrator.isEnabled(Key.Finalized)).toBe(true);
+    expect(orchestrator.getStats(Key.Finalized)).toMatchObject({
+      initiatedCount: 0,
+      completedCount: 0,
+      errorCount: 0,
+    });
+
+    await bucket.writeText('after-reset.txt', 'after');
+    await flush();
+    expect(calls).toEqual(['before-reset.txt', 'after-reset.txt']);
+    expect(orchestrator.getStats(Key.Finalized).completedCount).toBe(1);
   });
 
   it('reports observer failures through watchErrors and keeps executing handlers', async () => {
