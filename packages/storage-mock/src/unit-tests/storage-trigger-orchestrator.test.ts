@@ -1,6 +1,9 @@
 import { onObjectDeleted, onObjectFinalized } from 'firebase-functions/v2/storage';
 import { StorageMock, StorageTriggerOrchestrator } from '../index.js';
-import { StorageTriggerErrorOrigin } from '../lib/types.js';
+import {
+  StorageChangeRecord,
+  StorageTriggerErrorOrigin,
+} from '../lib/types.js';
 
 enum Key {
   Finalized = 'Finalized',
@@ -34,12 +37,22 @@ describe('StorageTriggerOrchestrator', () => {
     expect(() => orchestrator.disable('Missing' as Key)).toThrow(
       'No trigger handler associated with the key "Missing" is registered.'
     );
+    expect(() => orchestrator.observe('Missing' as Key, {})).toThrow(
+      'No trigger handler associated with the key "Missing" is registered.'
+    );
+    expect(() => orchestrator.waitOne('Missing' as Key)).toThrow(
+      'No trigger handler associated with the key "Missing" is registered.'
+    );
 
     orchestrator.observe(Key.Finalized, {
       before: (arg) => observed.push(`before:${arg.path}`),
       after: (arg) => observed.push(`after:${arg.path}`),
     });
     orchestrator.on(Key.Finalized, (arg) => observed.push(`on:${arg.path}`));
+    orchestrator.observeAll({
+      after: (arg) => observed.push(`all:${arg.key}:${arg.path}`),
+    });
+    orchestrator.onAll((arg) => observed.push(`onAll:${arg.key}:${arg.path}`));
     orchestrator.watchErrors((arg) => {
       watchedErrors.push(`${arg.key}:${arg.origin}`);
       throw new Error('watcher failure');
@@ -62,9 +75,13 @@ describe('StorageTriggerOrchestrator', () => {
       'before:skip.txt',
       'after:skip.txt',
       'on:skip.txt',
+      'all:Finalized:skip.txt',
+      'onAll:Finalized:skip.txt',
       'before:match.txt',
       'after:match.txt',
       'on:match.txt',
+      'all:Finalized:match.txt',
+      'onAll:Finalized:match.txt',
     ]);
 
     const stats = orchestrator.getStats(Key.Finalized);
@@ -137,6 +154,47 @@ describe('StorageTriggerOrchestrator', () => {
     await expect(reset).rejects.toThrow('cancelled');
   });
 
+  it('reports observer failures through watchErrors and keeps executing handlers', async () => {
+    const ctrl = new StorageMock().createStorage({ defaultBucket: 'orch.test' });
+    const bucket = ctrl.service().bucket();
+    const calls: string[] = [];
+    const watchedErrors: unknown[] = [];
+    const orchestrator = new StorageTriggerOrchestrator<Key>(ctrl, (reg) => {
+      reg.v2(
+        Key.Finalized,
+        onObjectFinalized({ bucket: 'orch.test' }, (event) => {
+          calls.push(event.data.name);
+        })
+      );
+    });
+    orchestrator.watchErrors((arg) => watchedErrors.push(arg));
+    orchestrator.observe(Key.Finalized, {
+      before() {
+        throw new Error('before failed');
+      },
+      after() {
+        throw new Error('after failed');
+      },
+    });
+
+    await bucket.writeText('observer.txt', 'observer');
+    await flush();
+
+    expect(calls).toEqual(['observer.txt']);
+    expect(watchedErrors).toEqual([
+      expect.objectContaining({
+        key: Key.Finalized,
+        origin: StorageTriggerErrorOrigin.OnBefore,
+        path: 'observer.txt',
+      }),
+      expect.objectContaining({
+        key: Key.Finalized,
+        origin: StorageTriggerErrorOrigin.OnAfter,
+        path: 'observer.txt',
+      }),
+    ]);
+  });
+
   it('ignores events from old controller epochs', async () => {
     const ctrl = new StorageMock().createStorage({ defaultBucket: 'orch.test' });
     const calls: string[] = [];
@@ -149,16 +207,29 @@ describe('StorageTriggerOrchestrator', () => {
       );
     });
 
+    let captured: StorageChangeRecord | undefined;
+    const unsubscribeCapture = ctrl.onObjectChange((record) => {
+      captured = record;
+    });
+    await ctrl.service().bucket().writeText('stale.txt', 'stale');
+    await flush();
+    expect(calls).toEqual(['stale.txt']);
+    unsubscribeCapture();
+
+    const staleEvent = captured;
+    if (!staleEvent) throw new Error('Expected captured storage event.');
+    calls.length = 0;
     const staleEpoch = orchestrator.epoch;
     ctrl.reset('orch.test');
     expect(orchestrator.epoch).toBe(staleEpoch + 1);
 
-    const listener = ctrl.onObjectChange as unknown as {
-      listeners?: unknown;
+    const internal = ctrl as unknown as {
+      changeListeners: { next(record: StorageChangeRecord): void };
     };
-    expect(listener).toBeDefined();
+    internal.changeListeners.next(staleEvent);
+    await flush();
+    expect(calls).toEqual([]);
 
-    // Emit indirectly before/after reset to verify real operations use the current epoch.
     await ctrl.service().bucket().writeText('current.txt', 'current');
     await flush();
     expect(calls).toEqual(['current.txt']);

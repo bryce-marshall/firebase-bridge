@@ -208,6 +208,54 @@ describe('StorageMock test controls and events', () => {
     expect(events).toEqual([]);
   });
 
+  it('does not consume unmatched failure rules and logs injected failures', async () => {
+    const ctrl = new StorageMock().createStorage({ defaultBucket: 'fail.test' });
+    const bucket = ctrl.service().bucket();
+    await bucket.writeText('file.txt', 'one');
+    ctrl.clearOperationLog();
+
+    ctrl.failNext({ operation: 'delete', path: 'file.txt' });
+    await expect(bucket.readText('file.txt')).resolves.toBe('one');
+    expect(ctrl.getOperationLog().map((record) => record.operation)).toEqual([
+      'read',
+    ]);
+
+    await expect(bucket.delete('file.txt')).rejects.toMatchObject({
+      code: 'storage/unavailable',
+    });
+    expect(ctrl.getOperationLog()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: 'delete',
+          path: 'file.txt',
+          success: false,
+          errorCode: 'storage/unavailable',
+        }),
+      ])
+    );
+    await expect(bucket.readText('file.txt')).resolves.toBe('one');
+  });
+
+  it('generates deterministic mock signed read URLs for the same object and expiry', async () => {
+    const ctrl = new StorageMock().createStorage({ defaultBucket: 'signed.test' });
+    const bucket = ctrl.service().bucket();
+    const expiresAt = new Date('2026-01-02T00:00:00.000Z');
+    await bucket.writeText('folder/file name.txt', 'signed');
+
+    const first = await bucket.createSignedReadUrl('folder/file name.txt', {
+      expiresAt,
+    });
+    const second = await bucket.object('folder/file name.txt').createSignedReadUrl({
+      expiresAt,
+    });
+
+    expect(first).toEqual(second);
+    expect(first).toEqual({
+      url: 'https://storage-mock.local/signed.test/folder%2Ffile%20name.txt?expires=1767312000000',
+      expiresAt,
+    });
+  });
+
   it('leaves metadata unchanged after injected metadata failures', async () => {
     const ctrl = new StorageMock().createStorage({ defaultBucket: 'fail.test' });
     const bucket = ctrl.service().bucket();

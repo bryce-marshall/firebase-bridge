@@ -123,6 +123,25 @@ describe('StorageMock v1 direct trigger registration', () => {
     await flush();
     expect(calls).toEqual(['keep.csv']);
   });
+
+  it('allows duplicate direct registration of the same function', async () => {
+    const ctrl = new StorageMock().createStorage({ defaultBucket: 'v1.test' });
+    const bucket = ctrl.service().bucket();
+    const calls: string[] = [];
+    const fn = v1.storage.bucket('v1.test').object().onFinalize((object) => {
+      calls.push(object.name ?? '');
+    });
+
+    const disposeOne = registerTrigger(ctrl, fn);
+    const disposeTwo = registerTrigger(ctrl, fn);
+    await bucket.writeText('duplicate.csv', 'duplicate');
+    await flush();
+
+    expect(calls).toEqual(['duplicate.csv', 'duplicate.csv']);
+
+    disposeOne();
+    disposeTwo();
+  });
 });
 
 function flush(): Promise<void> {

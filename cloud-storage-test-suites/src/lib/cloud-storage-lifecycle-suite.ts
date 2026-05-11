@@ -82,5 +82,52 @@ export function cloudStorageLifecycleSuite(
       });
       expect(page2.objects.map((m) => m.path)).toEqual(['list/c.txt']);
     });
+
+    it('stores byte copies and returns immutable read snapshots', async () => {
+      const input = new Uint8Array([65, 66, 67]);
+      await bucket.write('bytes/raw.bin', input);
+      input[0] = 90;
+
+      const firstRead = await bucket.read('bytes/raw.bin');
+      expect([...firstRead.data]).toEqual([65, 66, 67]);
+      firstRead.data[1] = 89;
+
+      const secondRead = await bucket.read('bytes/raw.bin');
+      expect([...secondRead.data]).toEqual([65, 66, 67]);
+    });
+
+    it('honors explicit text encodings where supported', async () => {
+      await bucket.writeText('text/latin1.txt', '£', { encoding: 'latin1' });
+
+      expect(await bucket.readText('text/latin1.txt', { encoding: 'latin1' })).toBe(
+        '£'
+      );
+      expect((await bucket.getMetadata('text/latin1.txt')).size).toBe(1);
+    });
+
+    it('delegates object handle operations to the backing bucket', async () => {
+      const object = bucket.object('handles/file.txt');
+
+      expect(object.bucketId).toBe(bucket.bucketId);
+      expect(object.path).toBe('handles/file.txt');
+      await expect(object.exists()).resolves.toBe(false);
+
+      const write = await object.writeText('hello', {
+        metadata: { contentType: 'text/plain' },
+      });
+      await expect(object.exists()).resolves.toBe(true);
+      await expect(object.readText()).resolves.toBe('hello');
+      await expect(object.getMetadata()).resolves.toMatchObject({
+        generation: write.metadata.generation,
+        contentType: 'text/plain',
+      });
+
+      await object.setMetadata({ cacheControl: 'private' });
+
+      await expect(object.delete()).resolves.toMatchObject({ deleted: true });
+      await expect(object.delete({ ignoreMissing: true })).resolves.toMatchObject({
+        deleted: false,
+      });
+    });
   });
 }
