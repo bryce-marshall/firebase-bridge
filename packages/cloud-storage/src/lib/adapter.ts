@@ -85,7 +85,9 @@ export class FirebaseCloudStorageService implements CloudStorageService {
         this.storage.bucket(bucketId) as unknown as ProviderBucket
       );
     } catch (cause) {
-      throw mapProviderError(cause, 'Unable to resolve Cloud Storage bucket.');
+      throw mapProviderError(cause, 'Unable to resolve Cloud Storage bucket.', {
+        notFoundCode: 'storage/bucket-not-found',
+      });
     }
   }
 }
@@ -241,7 +243,9 @@ class FirebaseCloudStorageBucket implements CloudStorageBucket {
         nextPageToken: nextQuery?.pageToken,
       };
     } catch (cause) {
-      throw mapProviderError(cause, 'Unable to list Cloud Storage objects.');
+      throw mapProviderError(cause, 'Unable to list Cloud Storage objects.', {
+        notFoundCode: 'storage/bucket-not-found',
+      });
     }
   }
 
@@ -470,11 +474,19 @@ function toDate(value: unknown): Date {
   return new Date(0);
 }
 
-function mapProviderError(cause: unknown, message: string): CloudStorageError {
+function mapProviderError(
+  cause: unknown,
+  message: string,
+  options?: { notFoundCode?: 'storage/object-not-found' | 'storage/bucket-not-found' }
+): CloudStorageError {
   if (cause instanceof CloudStorageError) return cause;
   const code = providerCode(cause);
   if (code === 404) {
-    return cloudStorageError('storage/object-not-found', message, cause);
+    return cloudStorageError(
+      options?.notFoundCode ?? 'storage/object-not-found',
+      message,
+      cause
+    );
   }
   if (code === 412) {
     return cloudStorageError('storage/precondition-failed', message, cause);

@@ -29,6 +29,64 @@ describe('FirebaseCloudStorageService adapter error mapping', () => {
     });
   });
 
+  it('maps provider 412 errors to storage/precondition-failed', async () => {
+    const service = new FirebaseCloudStorageService(
+      fakeStorage({
+        file: () =>
+          fakeFile({
+            save: async () => {
+              throw { code: 412, message: 'precondition failed' };
+            },
+          }),
+      })
+    );
+
+    await expect(
+      service.bucket('errors.test').writeText('stale.txt', 'stale')
+    ).rejects.toMatchObject({
+      code: 'storage/precondition-failed',
+    });
+  });
+
+  it('maps provider 500 and 503 errors to storage/unavailable', async () => {
+    const unavailable = (statusCode: number) =>
+      new FirebaseCloudStorageService(
+        fakeStorage({
+          file: () =>
+            fakeFile({
+              download: async () => {
+                throw { statusCode, message: 'temporarily unavailable' };
+              },
+            }),
+        })
+      );
+
+    await expect(
+      unavailable(500).bucket('errors.test').read('unavailable.txt')
+    ).rejects.toMatchObject({
+      code: 'storage/unavailable',
+    });
+    await expect(
+      unavailable(503).bucket('errors.test').read('unavailable.txt')
+    ).rejects.toMatchObject({
+      code: 'storage/unavailable',
+    });
+  });
+
+  it('maps bucket-level 404 errors to storage/bucket-not-found', async () => {
+    const service = new FirebaseCloudStorageService(
+      fakeStorage({
+        getFiles: async () => {
+          throw { code: 404, message: 'bucket not found' };
+        },
+      })
+    );
+
+    await expect(service.bucket('missing.test').list()).rejects.toMatchObject({
+      code: 'storage/bucket-not-found',
+    });
+  });
+
   it('maps unknown provider errors to storage/unknown', async () => {
     const service = new FirebaseCloudStorageService(
       fakeStorage({
