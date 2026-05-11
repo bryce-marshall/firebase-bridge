@@ -25,6 +25,8 @@ The abstraction normalizes common failure paths into `CloudStorageError` codes i
 
 This validation is not intended to duplicate every Google Cloud Storage naming rule. Provider-specific bucket naming failures may still be returned by the underlying SDK and mapped to the closest stable `CloudStorageError.code`.
 
+Consumers should treat `CloudStorageError.code` as the portable behavior contract. The error `cause` field preserves the underlying provider or mock failure for diagnostics, audit logging, and sanitized operational traces, but provider-specific cause shapes are not part of the cross-environment contract.
+
 ## Signed Read URLs
 
 `createSignedReadUrl()` requires the object to exist and returns the provider-generated URL plus the requested `expiresAt`. In production, signing support depends on Firebase Admin / Google Cloud Storage credentials. Emulator-backed tests should not assume signing credentials are available; use adapter unit tests with fake provider objects for credential-independent signed URL behavior.
