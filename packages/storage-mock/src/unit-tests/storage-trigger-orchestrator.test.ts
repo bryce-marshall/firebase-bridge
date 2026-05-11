@@ -109,12 +109,41 @@ describe('StorageTriggerOrchestrator', () => {
     await bucket.writeText('disabled.txt', 'disabled');
     await flush();
     expect(calls).toEqual(['skip.txt', 'match.txt']);
+    orchestrator.all(true);
+    await bucket.writeText('reenabled.txt', 'reenabled');
+    await flush();
+    expect(calls).toEqual(['skip.txt', 'match.txt', 'reenabled.txt']);
+
+    orchestrator.all(false);
     orchestrator.attach();
     expect(orchestrator.isEnabled(Key.Finalized)).toBe(true);
-    expect(orchestrator.getStats(Key.Finalized).completedCount).toBe(2);
+    expect(orchestrator.getStats(Key.Finalized).completedCount).toBe(3);
+
+    orchestrator.suspended = true;
+    await bucket.writeText('suspended.txt', 'suspended');
+    await flush();
+    expect(calls).toEqual(['skip.txt', 'match.txt', 'reenabled.txt']);
+    orchestrator.suspended = false;
+    await bucket.writeText('resumed.txt', 'resumed');
+    await flush();
+    expect(calls).toEqual([
+      'skip.txt',
+      'match.txt',
+      'reenabled.txt',
+      'resumed.txt',
+    ]);
 
     orchestrator.dispose();
     expect(() => orchestrator.isEnabled(Key.Finalized)).toThrow('Object disposed.');
+    expect(() => orchestrator.all(true)).toThrow('Object disposed.');
+    expect(() => orchestrator.enable(Key.Finalized)).toThrow('Object disposed.');
+    expect(() => orchestrator.disable(Key.Finalized)).toThrow('Object disposed.');
+    expect(() => orchestrator.getStats(Key.Finalized)).toThrow('Object disposed.');
+    expect(() => orchestrator.observe(Key.Finalized, {})).toThrow('Object disposed.');
+    expect(() => orchestrator.watchErrors(() => undefined)).toThrow(
+      'Object disposed.'
+    );
+    expect(() => orchestrator.waitOne(Key.Finalized)).toThrow('Object disposed.');
   });
 
   it('cancels and times out waiters deterministically', async () => {
@@ -193,6 +222,35 @@ describe('StorageTriggerOrchestrator', () => {
         path: 'observer.txt',
       }),
     ]);
+  });
+
+  it('waits for matching error predicates', async () => {
+    const ctrl = new StorageMock().createStorage({ defaultBucket: 'orch.test' });
+    const bucket = ctrl.service().bucket();
+    const orchestrator = new StorageTriggerOrchestrator<Key>(ctrl, (reg) => {
+      reg.v2(
+        Key.Deleted,
+        onObjectDeleted({ bucket: 'orch.test' }, () => {
+          throw new Error('delete failed');
+        })
+      );
+    });
+
+    await bucket.writeText('skip-error.txt', 'skip');
+    await bucket.writeText('match-error.txt', 'match');
+    const waiter = orchestrator.waitError(
+      Key.Deleted,
+      (arg) => arg.path === 'match-error.txt'
+    );
+
+    await bucket.delete('skip-error.txt');
+    await bucket.delete('match-error.txt');
+
+    await expect(waiter).resolves.toMatchObject({
+      key: Key.Deleted,
+      path: 'match-error.txt',
+      errorCount: 2,
+    });
   });
 
   it('ignores events from old controller epochs', async () => {
