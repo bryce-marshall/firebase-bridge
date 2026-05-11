@@ -1,11 +1,11 @@
 import type { CloudFunction } from 'firebase-functions/v1';
 import type { StorageController } from '../types.js';
 import {
+  enqueueTriggerRun,
   normalizeRegisterOptions,
   ObjectMetadataLike,
   extractBucketFromResource,
   mapV1Kind,
-  runWithHooks,
   shouldDeliver,
   toEventContext,
   toObjectMetadata,
@@ -46,10 +46,12 @@ export function registerTrigger(
     throw new Error('Not a Cloud Storage v1 event function or missing metadata.');
   }
   const options = normalizeRegisterOptions(predicateOrOptions);
+  let queue = Promise.resolve();
   return ctrl.onObjectChange((record) => {
     if (!shouldDeliver(meta, record)) return;
-    void runWithHooks(record, options, () =>
+    queue = enqueueTriggerRun(queue, record, options, () =>
       handler.run(toObjectMetadata(record.metadata), toEventContext(record))
     );
+    void queue;
   });
 }

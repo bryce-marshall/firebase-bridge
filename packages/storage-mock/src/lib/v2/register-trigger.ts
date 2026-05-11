@@ -1,10 +1,10 @@
 import type { CloudEvent, CloudFunction } from 'firebase-functions/v2';
 import type { StorageController } from '../types.js';
 import {
+  enqueueTriggerRun,
   extractBucketFilter,
   mapV2Kind,
   normalizeRegisterOptions,
-  runWithHooks,
   shouldDeliver,
   StorageCloudEventLike,
   toCloudEvent,
@@ -45,10 +45,12 @@ export function registerTrigger<T extends CloudEvent<unknown>>(
     throw new Error('Not a Cloud Storage v2 event function or missing metadata.');
   }
   const options = normalizeRegisterOptions(predicateOrOptions);
+  let queue = Promise.resolve();
   return ctrl.onObjectChange((record) => {
     if (!shouldDeliver(meta, record)) return;
-    void runWithHooks(record, options, () =>
+    queue = enqueueTriggerRun(queue, record, options, () =>
       handler.run(toCloudEvent(record) as unknown as T)
     );
+    void queue;
   });
 }

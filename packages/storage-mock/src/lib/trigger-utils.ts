@@ -213,6 +213,16 @@ export async function runWithHooks(
   }
 }
 
+/** Enqueues a trigger delivery after the previous delivery has settled. */
+export function enqueueTriggerRun(
+  queue: Promise<void>,
+  record: StorageChangeRecord,
+  options: RegisterStorageTriggerOptions,
+  run: () => unknown | Promise<unknown>
+): Promise<void> {
+  return queue.then(() => runWithHooks(record, options, run));
+}
+
 /** Converts normalized metadata to a Firebase v1 object metadata payload. */
 export function toObjectMetadata(
   metadata: CloudStorageObjectMetadata

@@ -174,6 +174,57 @@ describe('StorageMock v2 direct trigger registration', () => {
     disposeTwo();
   });
 
+  it('queues matching trigger deliveries and runs them in order', async () => {
+    const ctrl = new StorageMock().createStorage({ defaultBucket: 'v2.test' });
+    const bucket = ctrl.service().bucket();
+    const first = deferred();
+    const second = deferred();
+    const secondStarted = deferred();
+    const completed = deferred();
+    const calls: string[] = [];
+
+    registerTrigger(
+      ctrl,
+      onObjectFinalized({ bucket: 'v2.test' }, async (event) => {
+        calls.push(`start:${event.data.name}`);
+        if (event.data.name === 'first.csv') {
+          await first.promise;
+        } else {
+          secondStarted.resolve();
+          await second.promise;
+        }
+        calls.push(`end:${event.data.name}`);
+        if (event.data.name === 'second.csv') completed.resolve();
+      })
+    );
+
+    const writeFirst = bucket.writeText('first.csv', 'first');
+    expect(calls).toEqual([]);
+    await writeFirst;
+    expect(calls).toEqual(['start:first.csv']);
+
+    await bucket.writeText('second.csv', 'second');
+    await drainMicrotasks();
+    expect(calls).toEqual(['start:first.csv']);
+
+    first.resolve();
+    await secondStarted.promise;
+    expect(calls).toEqual([
+      'start:first.csv',
+      'end:first.csv',
+      'start:second.csv',
+    ]);
+
+    second.resolve();
+    await completed.promise;
+    expect(calls).toEqual([
+      'start:first.csv',
+      'end:first.csv',
+      'start:second.csv',
+      'end:second.csv',
+    ]);
+  });
+
   it('reports handler errors through onError and swallows onError failures', async () => {
     const ctrl = new StorageMock().createStorage({ defaultBucket: 'v2.test' });
     const bucket = ctrl.service().bucket();
@@ -202,6 +253,22 @@ describe('StorageMock v2 direct trigger registration', () => {
     });
   });
 });
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolveFn!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    resolveFn = resolve;
+  });
+  return {
+    promise,
+    resolve: resolveFn,
+  };
+}
+
+async function drainMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
 
 function flush(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 10));

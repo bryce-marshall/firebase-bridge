@@ -272,6 +272,8 @@ The mock still validates paths, applies failure injection, and checks object exi
 
 Direct trigger registration lets real Firebase Functions v1/v2 storage handlers run when mock object events occur.
 
+Matching events are enqueued per registered trigger. A storage operation does not wait for trigger completion, and the next matching event for that registration will not start until the previous delivery has finished. This keeps back-to-back writes deterministic without making storage writes synchronously complete trigger side effects.
+
 ### v2 trigger example
 
 ```ts
@@ -392,6 +394,8 @@ The mock emits object events only after successful operations:
 - `archived` is recognized by the trigger harness, but normal mock operations do not currently emit archive events.
 
 No event is emitted for failed operations or `delete({ ignoreMissing: true })` when the object is absent.
+
+Trigger delivery is asynchronous and sequential per registration. For direct `registerTrigger()` tests, wait for your handler's observable side effect or yield the event loop before asserting. For larger suites, prefer `StorageTriggerOrchestrator.waitOne()` / `wait()` over fixed sleeps.
 
 ## Validation and errors
 
