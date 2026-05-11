@@ -7,6 +7,37 @@ import {
 } from '../index.js';
 
 describe('Cloud Storage function wrappers', () => {
+  it('creates v2 Storage functions with bucket-scoped endpoint metadata', () => {
+    expectEndpoint(
+      onObjectFinalized(
+        { bucket: 'wrapper.test', platform: () => ({}) },
+        () => undefined
+      ),
+      'google.cloud.storage.object.v1.finalized'
+    );
+    expectEndpoint(
+      onObjectDeleted(
+        { bucket: 'wrapper.test', platform: () => ({}) },
+        () => undefined
+      ),
+      'google.cloud.storage.object.v1.deleted'
+    );
+    expectEndpoint(
+      onObjectArchived(
+        { bucket: 'wrapper.test', platform: () => ({}) },
+        () => undefined
+      ),
+      'google.cloud.storage.object.v1.archived'
+    );
+    expectEndpoint(
+      onObjectMetadataUpdated(
+        { bucket: 'wrapper.test', platform: () => ({}) },
+        () => undefined
+      ),
+      'google.cloud.storage.object.v1.metadataUpdated'
+    );
+  });
+
   it('normalizes finalized events and awaits async platform and handler', async () => {
     const calls: string[] = [];
     const fn = onObjectFinalized(
@@ -139,4 +170,15 @@ function eventPayload() {
       updated: '2026-05-01T00:01:00.000Z',
     },
   };
+}
+
+function expectEndpoint(fn: unknown, eventType: string): void {
+  expect((fn as { __endpoint?: unknown }).__endpoint).toMatchObject({
+    eventTrigger: {
+      eventType,
+      eventFilters: {
+        bucket: 'wrapper.test',
+      },
+    },
+  });
 }

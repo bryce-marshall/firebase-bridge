@@ -148,20 +148,27 @@ describe('StorageMock test controls and events', () => {
   it('resets and deletes bucket state while preserving usable controllers', async () => {
     const ctrl = new StorageMock().createStorage({ defaultBucket: 'reset.test' });
     const bucket = ctrl.service().bucket();
+    const otherBucket = ctrl.service().bucket('other-reset.test');
 
     await bucket.writeText('one.txt', 'one');
+    await otherBucket.writeText('other.txt', 'other');
     const initialEpoch = ctrl.epoch;
     ctrl.reset('reset.test');
     expect(ctrl.epoch).toBe(initialEpoch + 1);
     expect(ctrl.listObjects('reset.test')).toEqual([]);
+    expect(ctrl.getObjectText('other-reset.test', 'other.txt')).toBe('other');
 
     await bucket.writeText('two.txt', 'two');
     ctrl.resetAll();
     expect(ctrl.listObjects()).toEqual([]);
 
     await bucket.writeText('three.txt', 'three');
+    await otherBucket.writeText('other-delete.txt', 'other');
     ctrl.delete('reset.test');
     expect(ctrl.listObjects('reset.test')).toEqual([]);
+    expect(ctrl.getObjectText('other-reset.test', 'other-delete.txt')).toBe(
+      'other'
+    );
 
     await bucket.writeText('four.txt', 'four');
     ctrl.deleteAll();
@@ -205,6 +212,13 @@ describe('StorageMock test controls and events', () => {
       message: 'custom failure',
     });
     await expect(bucket.readText('file.txt')).resolves.toBe('one');
+    expect(events).toEqual([]);
+
+    ctrl.failNext({ operation: 'write', path: 'missing-create.txt' });
+    await expect(bucket.writeText('missing-create.txt', 'create')).rejects.toMatchObject({
+      code: 'storage/unavailable',
+    });
+    expect(ctrl.hasObject('fail.test', 'missing-create.txt')).toBe(false);
     expect(events).toEqual([]);
   });
 
@@ -259,10 +273,13 @@ describe('StorageMock test controls and events', () => {
   it('leaves metadata unchanged after injected metadata failures', async () => {
     const ctrl = new StorageMock().createStorage({ defaultBucket: 'fail.test' });
     const bucket = ctrl.service().bucket();
+    const events: string[] = [];
+    ctrl.onObjectChange((record) => events.push(record.kind));
 
     const write = await bucket.writeText('meta.txt', 'one', {
       metadata: { contentType: 'text/plain' },
     });
+    events.length = 0;
     ctrl.failNext({ operation: 'setMetadata', path: 'meta.txt' });
 
     await expect(
@@ -273,5 +290,6 @@ describe('StorageMock test controls and events', () => {
       metageneration: write.metadata.metageneration,
       contentType: 'text/plain',
     });
+    expect(events).toEqual([]);
   });
 });
