@@ -376,6 +376,56 @@ describe('StorageMock test controls and events', () => {
     expect(signer).not.toHaveBeenCalled();
   });
 
+  it('preserves mock failures as inspectable storage error causes', async () => {
+    const ctrl = new StorageMock().createStorage({ defaultBucket: 'cause.test' });
+    const bucket = ctrl.service().bucket();
+    const write = await bucket.writeText('file.txt', 'one');
+
+    await expectMockCause(
+      bucket.read('missing.txt'),
+      'storage/object-not-found',
+      'Object "missing.txt" was not found.'
+    );
+    await expectMockCause(
+      bucket.read('/bad.txt'),
+      'storage/invalid-path',
+      'Invalid object path "/bad.txt".'
+    );
+    await expectMockCause(
+      bucket.writeText('file.txt', 'two', {
+        precondition: {
+          type: 'generation-match',
+          generation: `${Number(write.metadata.generation) + 1}`,
+        },
+      }),
+      'storage/precondition-failed',
+      'Cloud Storage precondition failed for "file.txt".'
+    );
+
+    ctrl.failNext({
+      operation: 'delete',
+      path: 'file.txt',
+      code: 'storage/permission-denied',
+      message: 'custom failure',
+    });
+    await expectMockCause(
+      bucket.delete('file.txt'),
+      'storage/permission-denied',
+      'custom failure'
+    );
+
+    expect(() => ctrl.service().bucket('bad/bucket')).toThrow(
+      expect.objectContaining({
+        code: 'storage/invalid-bucket',
+        cause: expect.objectContaining({
+          code: 'storage/invalid-bucket',
+          message: 'Invalid bucket id "bad/bucket".',
+          mockMessage: 'StorageMock generated this Cloud Storage failure.',
+        }),
+      })
+    );
+  });
+
   it('leaves metadata unchanged after injected metadata failures', async () => {
     const ctrl = new StorageMock().createStorage({ defaultBucket: 'fail.test' });
     const bucket = ctrl.service().bucket();
@@ -399,3 +449,29 @@ describe('StorageMock test controls and events', () => {
     expect(events).toEqual([]);
   });
 });
+
+async function expectMockCause(
+  promise: Promise<unknown>,
+  code: string,
+  message: string
+): Promise<void> {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).toBeInstanceOf(CloudStorageError);
+    expect(error).toMatchObject({
+      code,
+      message,
+      cause: expect.objectContaining({
+        code,
+        message,
+        mockMessage: 'StorageMock generated this Cloud Storage failure.',
+      }),
+    });
+    expect((error as Error & { cause?: unknown }).cause).toBeInstanceOf(
+      CloudStorageError
+    );
+    return;
+  }
+  throw new Error(`Expected mock CloudStorageError with code "${code}".`);
+}

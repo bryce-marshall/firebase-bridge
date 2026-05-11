@@ -28,6 +28,17 @@ export function expectPreconditionFailed(
   return expectStorageError(promise, 'storage/precondition-failed');
 }
 
+export async function expectStorageErrorCause(
+  promise: Promise<unknown>,
+  code: CloudStorageErrorCode
+): Promise<CloudStorageError> {
+  const error = await expectStorageError(promise, code);
+  const cause = (error as Error & { cause?: unknown }).cause;
+  expect(cause).toBeDefined();
+  expect(typeof cause).toBe('object');
+  return error;
+}
+
 export async function expectNoObject(
   bucket: CloudStorageBucket,
   path: string

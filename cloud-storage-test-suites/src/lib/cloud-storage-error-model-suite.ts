@@ -5,6 +5,7 @@ import {
   expectObjectMissing,
   expectPreconditionFailed,
   expectStorageError,
+  expectStorageErrorCause,
 } from './helpers.js';
 
 export function cloudStorageErrorModelSuite(
@@ -59,6 +60,15 @@ export function cloudStorageErrorModelSuite(
           expiresAt: new Date('2026-01-02T00:00:00.000Z'),
         })
       );
+    });
+
+    it('preserves the underlying failure as an inspectable cause', async () => {
+      const error = await expectStorageErrorCause(
+        bucket.read('cause-missing.txt'),
+        'storage/object-not-found'
+      );
+
+      expect((error as Error & { cause?: unknown }).cause).not.toBe(error);
     });
 
     it('does not apply side effects after precondition failures', async () => {

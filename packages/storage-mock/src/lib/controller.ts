@@ -6,6 +6,7 @@ import {
   CloudStorageDeleteOptions,
   CloudStorageDeleteResult,
   CloudStorageError,
+  CloudStorageErrorCode,
   CloudStorageListOptions,
   CloudStorageListResult,
   CloudStorageObject,
@@ -45,6 +46,8 @@ import {
 const DEFAULT_BUCKET = 'default.test';
 const DEFAULT_PROJECT = 'default-project';
 const DEFAULT_LOCATION = 'nam5';
+const MOCK_ERROR_CAUSE_MESSAGE =
+  'StorageMock generated this Cloud Storage failure.';
 
 const defaultSignedUrlSigner: StorageSignedUrlSigner = ({
   bucketId,
@@ -479,7 +482,7 @@ class InMemoryStorageController implements StorageController {
     if (!precondition || precondition.type === 'none') return;
     const metadata = object?.metadata;
     const fail = () => {
-      throw cloudStorageError(
+      throw mockStorageError(
         'storage/precondition-failed',
         `Cloud Storage precondition failed for "${path}".`
       );
@@ -513,12 +516,18 @@ class InMemoryStorageController implements StorageController {
   }
 
   private objectNotFound(path: string): CloudStorageError {
-    return cloudStorageError('storage/object-not-found', `Object "${path}" was not found.`);
+    return mockStorageError(
+      'storage/object-not-found',
+      `Object "${path}" was not found.`
+    );
   }
 
   private assertPath(path: string): void {
     if (!path || path.startsWith('/') || containsControlCharacter(path)) {
-      throw cloudStorageError('storage/invalid-path', `Invalid object path "${path}".`);
+      throw mockStorageError(
+        'storage/invalid-path',
+        `Invalid object path "${path}".`
+      );
     }
   }
 
@@ -556,8 +565,8 @@ class InMemoryStorageController implements StorageController {
     const [rule] = this.failures.splice(index, 1);
     const code = rule.code ?? 'storage/unavailable';
     this.log(operation, bucketId, path, false, code);
-    throw cloudStorageError(
-      code as never,
+    throw mockStorageError(
+      code as CloudStorageErrorCode,
       rule.message ?? `Injected Cloud Storage failure for ${operation}.`
     );
   }
@@ -761,11 +770,20 @@ function assertBucketId(bucketId: string | undefined): void {
     bucketId !== undefined &&
     (!bucketId || bucketId.includes('/') || containsControlCharacter(bucketId))
   ) {
-    throw cloudStorageError(
+    throw mockStorageError(
       'storage/invalid-bucket',
       `Invalid bucket id "${bucketId}".`
     );
   }
+}
+
+function mockStorageError(
+  code: CloudStorageErrorCode,
+  message: string
+): CloudStorageError {
+  const cause = new CloudStorageError(code, message);
+  Object.assign(cause, { mockMessage: MOCK_ERROR_CAUSE_MESSAGE });
+  return cloudStorageError(code, message, cause);
 }
 
 function containsControlCharacter(value: string): boolean {
