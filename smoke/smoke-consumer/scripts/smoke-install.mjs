@@ -10,6 +10,8 @@ const pkgs = [
   { name: '@firebase-bridge/firestore-admin', path: resolve(root, 'packages/firestore-admin'), outFile: 'firestore-admin.tgz' },
   { name: '@firebase-bridge/firestore-functions', path: resolve(root, 'packages/firestore-functions'), outFile: 'firestore-functions.tgz' },
   { name: '@firebase-bridge/auth-context', path: resolve(root, 'packages/auth-context'), outFile: 'auth-context.tgz' },
+  { name: '@firebase-bridge/cloud-storage', path: resolve(root, 'packages/cloud-storage'), outFile: 'cloud-storage.tgz' },
+  { name: '@firebase-bridge/storage-mock', path: resolve(root, 'packages/storage-mock'), outFile: 'storage-mock.tgz' },
 ];
 
 function sh(cmd, cwd = root) {

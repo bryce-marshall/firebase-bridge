@@ -9,21 +9,40 @@
   "types": "./esm/index.d.ts",
   "exports": {
     ".": {
-      "types": "./esm/index.d.ts",
-      "require": "./cjs/index.js",
-      "import": "./esm/index.js"
+      "types": {
+        "import": "./esm/index.d.ts",
+        "require": "./esm/index.d.cts"
+      },
+      "import": "./esm/index.js",
+      "require": "./cjs/index.js"
     },
     "./v1": {
-      "types": "./esm/lib/v1/index.d.ts",
-      "require": "./cjs/lib/v1/index.js",
-      "import": "./esm/lib/v1/index.js"
+      "types": {
+        "import": "./esm/lib/v1/index.d.ts",
+        "require": "./esm/lib/v1/index.d.cts"
+      },
+      "import": "./esm/lib/v1/index.js",
+      "require": "./cjs/lib/v1/index.js"
     },
     "./v2": {
-      "types": "./esm/lib/v2/index.d.ts",
-      "require": "./cjs/lib/v2/index.js",
-      "import": "./esm/lib/v2/index.js"
+      "types": {
+        "import": "./esm/lib/v2/index.d.ts",
+        "require": "./esm/lib/v2/index.d.cts"
+      },
+      "import": "./esm/lib/v2/index.js",
+      "require": "./cjs/lib/v2/index.js"
     },
     "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "v1": [
+        "esm/lib/v1/index.d.ts"
+      ],
+      "v2": [
+        "esm/lib/v2/index.d.ts"
+      ]
+    }
   },
   "sideEffects": false,
   "engines": {

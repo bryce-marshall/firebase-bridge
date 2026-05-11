@@ -1,8 +1,12 @@
+import { isCloudStorageError } from '@firebase-bridge/cloud-storage';
 import { FirestoreMock } from '@firebase-bridge/firestore-admin';
 import { registerTrigger as triggerV1 } from '@firebase-bridge/firestore-functions/v1';
 import { registerTrigger as triggerV2 } from '@firebase-bridge/firestore-functions/v2';
+import { StorageMock } from '@firebase-bridge/storage-mock';
+import { registerTrigger as storageTriggerV2 } from '@firebase-bridge/storage-mock/v2';
 import * as v1 from 'firebase-functions/v1';
 import * as v2 from 'firebase-functions/v2';
+import { onObjectFinalized } from 'firebase-functions/v2/storage';
 
 /* ───────────────────────────── Pretty logger ───────────────────────────── */
 
@@ -166,6 +170,27 @@ const onUserWrittenV2 = v2.firestore.onDocumentWritten(
   }
 );
 
+const onImportFinalizedV2 = onObjectFinalized(
+  { bucket: 'imports.test' },
+  async (event) => {
+    prettyPrint(
+      'v2.storage.onObjectFinalized',
+      {
+        eventId: event.id,
+        type: event.type,
+        time: event.time,
+        bucket: event.data.bucket,
+        path: event.data.name,
+      },
+      {
+        contentType: event.data.contentType,
+        size: event.data.size,
+        metadata: event.data.metadata,
+      }
+    );
+  }
+);
+
 async function main(): Promise<void> {
   const mock = new FirestoreMock();
   const ctrl = mock.createDatabase();
@@ -176,6 +201,43 @@ async function main(): Promise<void> {
 
   const doc = firestore.doc('users/id-1234');
   await doc.set({ name: 'John' });
+
+  const storageEnv = new StorageMock({
+    now: () => Date.parse('2026-05-11T00:00:00.000Z'),
+  });
+  const storageCtrl = storageEnv.createStorage({
+    defaultBucket: 'imports.test',
+  });
+  const storage = storageCtrl.service();
+  const bucket = storage.bucket();
+
+  storageTriggerV2(storageCtrl, onImportFinalizedV2);
+
+  await bucket.writeText('transactions/u1/b1/import-001.csv', 'date,amount\n', {
+    metadata: {
+      contentType: 'text/csv',
+      customMetadata: {
+        userId: 'u1',
+        budgetId: 'b1',
+      },
+    },
+    precondition: { type: 'does-not-exist' },
+  });
+  await flush();
+
+  try {
+    await bucket.readText('missing.csv');
+  } catch (error) {
+    if (!isCloudStorageError(error)) throw error;
+    prettyPrint('cloud-storage.error', {
+      code: error.code,
+      name: error.name,
+    });
+  }
 }
 
 main();
+
+function flush(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 10));
+}

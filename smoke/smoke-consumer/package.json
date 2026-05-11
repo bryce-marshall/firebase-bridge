@@ -17,8 +17,10 @@
   },
   "dependencies": {
     "@firebase-bridge/auth-context": "file:_packed/auth-context.tgz",
+    "@firebase-bridge/cloud-storage": "file:_packed/cloud-storage.tgz",
     "@firebase-bridge/firestore-admin": "file:_packed/firestore-admin.tgz",
-    "@firebase-bridge/firestore-functions": "file:_packed/firestore-functions.tgz"
+    "@firebase-bridge/firestore-functions": "file:_packed/firestore-functions.tgz",
+    "@firebase-bridge/storage-mock": "file:_packed/storage-mock.tgz"
   },
   "devDependencies": {
     "rimraf": "^6.0.0",

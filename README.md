@@ -23,17 +23,26 @@ If you find it useful and would like to support ongoing development, you can [bu
 
 ## Output npm packages & licensing
 
+The published package set includes Firestore, HTTPS auth context, and Cloud Storage packages.
+
 | Package                                  | Project (this repo)            | Purpose                                                                        | License        |
 | ---------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------ | -------------- |
-| **@firebase-bridge/firestore-admin**     | `packages/firestore-admin`     | High‑fidelity **in‑memory Firestore Admin SDK** mock for unit tests            | **Apache‑2.0** |
-| **@firebase-bridge/firestore-functions** | `packages/firestore-functions` | Binds **`firebase-functions` v1 & v2** Firestore triggers to the in‑memory DB  | **Apache‑2.0** |
-| **@firebase-bridge/auth-context**        | `packages/auth-context`        | High-fidelity **mock invocation layer** for **Firebase HTTPS Cloud Functions** | **Apache‑2.0** |
+| **@firebase-bridge/auth-context**        | `packages/auth-context`        | High-fidelity **mock invocation layer** for **Firebase HTTPS Cloud Functions** | **Apache-2.0** |
+| **@firebase-bridge/cloud-storage**       | `packages/cloud-storage`       | Cloud Storage abstraction, Firebase adapter, normalized errors, and trigger wrappers | **Apache-2.0** |
+| **@firebase-bridge/firestore-admin**     | `packages/firestore-admin`     | High-fidelity **in-memory Firestore Admin SDK** mock for unit tests            | **Apache-2.0** |
+| **@firebase-bridge/firestore-functions** | `packages/firestore-functions` | Binds **`firebase-functions` v1 & v2** Firestore triggers to the in-memory DB  | **Apache-2.0** |
+| **@firebase-bridge/storage-mock**        | `packages/storage-mock`        | In-memory Cloud Storage mock, test controls, and v1/v2 storage trigger harness | **Apache-2.0** |
 
-> Licensing: The workspace uses **Apache‑2.0**. Some files adapt Google code (e.g., `googleapis/nodejs-firestore`); those files carry upstream headers and a modification notice. See each package’s `LICENSE` and (where applicable) `NOTICE`.
+> Licensing: The workspace uses **Apache-2.0**. Some files adapt Google code (e.g., `googleapis/nodejs-firestore`); those files carry upstream headers and a modification notice. See each package's `LICENSE` and (where applicable) `NOTICE`.
 
 ---
 
 ## Projects (at repo root)
+
+- **`packages/cloud-storage`** — implementation of `@firebase-bridge/cloud-storage` (portable Cloud Storage abstraction, production Firebase adapter, normalized errors, and storage trigger wrappers).
+- **`packages/storage-mock`** — implementation of `@firebase-bridge/storage-mock` (in-memory Cloud Storage service and trigger harness). Tests run **in process** (no emulator). Storage access is through the explicit abstraction, not `firebase-admin.storage()`.
+- **`cloud-storage-test-suites`** — shared, black-box test suites that exercise Cloud Storage behavior through the `@firebase-bridge/cloud-storage` abstraction.
+- **`cloud-storage-production`** — test runner that targets the **Firebase Emulator** and forwards to `cloud-storage-test-suites` to validate parity.
 
 - **`packages/firestore-admin`** — implementation of `@firebase-bridge/firestore-admin` (the in‑memory Firestore Admin SDK mock). Tests run **in‑process** (no emulator).
 - **`packages/firestore-functions`** — implementation of `@firebase-bridge/firestore-functions` (trigger binding for `firebase-functions` v1/v2). Tests run **in‑process** (no emulator). Binding is **explicit** in tests.
@@ -45,6 +54,8 @@ If you find it useful and would like to support ongoing development, you can [bu
 > **Workspaces:** The root `package.json` declares workspaces:
 >
 > - `packages/*`
+> - `cloud-storage-production`
+> - `cloud-storage-test-suites`
 > - `firestore-bridge-production`
 > - `firestore-bridge-test-suites`
 > - `smoke/*`
@@ -54,23 +65,39 @@ If you find it useful and would like to support ongoing development, you can [bu
 ```txt
 .
 ├─ packages/
-│  ├─ firestore-admin/             # @firebase-bridge/firestore-admin (in-memory Admin SDK)
+│  ├─ auth-context/                 # @firebase-bridge/auth-context (v1/v2 cloud function invocation)
 │  │  ├─ src/
 │  │  ├─ jest.config.ts
 │  │  └─ package.json
-│  ├─ firestore-functions/         # @firebase-bridge/firestore-functions (v1/v2 trigger binding)
+│  ├─ cloud-storage/                # @firebase-bridge/cloud-storage (storage abstraction + adapter)
 │  │  ├─ src/
 │  │  ├─ jest.config.ts
 │  │  └─ package.json
-│  └─ auth-context/                 # @firebase-bridge/auth-context (v1/v2 cloud function invocation)
+│  ├─ firestore-admin/              # @firebase-bridge/firestore-admin (in-memory Admin SDK)
+│  │  ├─ src/
+│  │  ├─ jest.config.ts
+│  │  └─ package.json
+│  ├─ firestore-functions/          # @firebase-bridge/firestore-functions (v1/v2 trigger binding)
+│  │  ├─ src/
+│  │  ├─ jest.config.ts
+│  │  └─ package.json
+│  └─ storage-mock/                 # @firebase-bridge/storage-mock (in-memory storage + triggers)
 │     ├─ src/
 │     ├─ jest.config.ts
 │     └─ package.json
-├─ firestore-bridge-production/    # emulator-backed test runner
+├─ cloud-storage-production/        # emulator-backed Cloud Storage test runner
 │  ├─ src/
 │  ├─ jest.config.ts
 │  └─ package.json
-├─ firestore-bridge-test-suites/   # shared suites used by both runners
+├─ cloud-storage-test-suites/       # shared Cloud Storage abstraction suites
+│  ├─ src/
+│  ├─ jest.config.ts
+│  └─ package.json
+├─ firestore-bridge-production/     # emulator-backed Firestore test runner
+│  ├─ src/
+│  ├─ jest.config.ts
+│  └─ package.json
+├─ firestore-bridge-test-suites/    # shared Firestore suites used by both runners
 │  ├─ src/
 │  ├─ jest.config.ts
 │  └─ package.json
@@ -93,7 +120,7 @@ If you find it useful and would like to support ongoing development, you can [bu
 
 - **Node.js ≥ 18** (repo uses `@types/node@18.16.9`)
 - Local install of **Nx** (invoked via `npx nx`) and **Jest** via devDependencies
-- Firebase Emulator (only needed for `firestore-bridge-production` tests)
+- Firebase Emulator (only needed for `firestore-bridge-production` and `cloud-storage-production` tests)
 
 Install dependencies at the repo root:
 
@@ -139,6 +166,8 @@ npx tsc -b firestore-bridge-test-suites
 # Nx builds (per project)
 npx nx run firestore-admin:build
 npx nx run firestore-functions:build
+npx nx run cloud-storage:build
+npx nx run storage-mock:build
 
 # Show Nx project info
 npx nx show project firestore-admin
@@ -150,24 +179,27 @@ npx nx show project firestore-admin
 
 ### In‑process (mock) tests
 
-For **`firestore-admin`** and **`firestore-functions`** the unit tests run entirely **in process** — no emulator, no special init.
+For **`firestore-admin`**, **`firestore-functions`**, **`cloud-storage`**, and **`storage-mock`** the unit tests run entirely **in process** — no emulator, no special init.
 
 ```bash
 # Run tests per project
 npx jest firestore-admin
 npx jest firestore-functions
+npx jest cloud-storage
+npx jest storage-mock
 ```
 
 ### Emulator tests
 
-For **`firestore-bridge-production`**, start the emulator first, then run tests:
+For **`firestore-bridge-production`** and **`cloud-storage-production`**, start the emulator first, then run tests:
 
 ```bash
 npm run firebase-emulators:start
 npx jest firestore-bridge-production
+npx jest cloud-storage-production
 ```
 
-> The production runner imports the same `firestore-bridge-test-suites` to verify behavioral consistency with the mock.
+> The production runners import the matching shared suites (`firestore-bridge-test-suites` or `cloud-storage-test-suites`) to verify behavioral consistency with the mocks.
 
 ### Run all tests
 
@@ -214,9 +246,43 @@ await db.collection('users').doc('u1').set({ name: 'Ada' });
 
 ---
 
+## Cloud Storage abstraction and mock
+
+Unlike `@firebase-bridge/firestore-admin`, `@firebase-bridge/storage-mock` does not replace or emulate `firebase-admin.storage()` directly. Production code should use the `@firebase-bridge/cloud-storage` abstraction, and tests can substitute `@firebase-bridge/storage-mock` to drive object lifecycle behavior and Cloud Storage trigger invocation in process.
+
+```ts
+import { StorageMock } from '@firebase-bridge/storage-mock';
+import { registerTrigger } from '@firebase-bridge/storage-mock/v2';
+import { onObjectFinalized } from 'firebase-functions/v2/storage';
+
+const onImportFinalized = onObjectFinalized(
+  { bucket: 'imports.test' },
+  async (event) => {
+    await handleImport(event.data.name);
+  }
+);
+
+const env = new StorageMock();
+const ctl = env.createStorage({ defaultBucket: 'imports.test' });
+const storage = ctl.service();
+
+registerTrigger(ctl, onImportFinalized);
+
+await storage.bucket().writeText('transactions/u1/import.csv', 'date,amount\n', {
+  metadata: { contentType: 'text/csv' },
+  precondition: { type: 'does-not-exist' },
+});
+```
+
+Firestore trigger tests can be driven by writing through the in-memory Firestore Admin-compatible mock. Cloud Storage trigger tests must be driven through the explicit storage service returned by `StorageMock#createStorage().service()` or through consumer code that depends on the `@firebase-bridge/cloud-storage` interfaces.
+
+---
+
 ## Deterministic time in tests
 
-The mock exposes a controllable clock (`SystemTime`) to make **commit/write/update times** deterministic. Internal timestamps and `FieldValue.serverTimestamp()` respect this clock.
+`@firebase-bridge/firestore-admin` exposes the `SystemTime` class to make **commit/write/update times** deterministic. Internal timestamps and `FieldValue.serverTimestamp()` respect this clock.
+
+Other packages that need deterministic time accept a configurable `now()` function. Tests can manually bind that function to a `SystemTime` instance, a fake timer clock, or another deterministic time source.
 
 - If your code calls `Timestamp.now()`, note that it uses the **real clock** by default. You can align global time with your test runner’s fake timers or patch `Timestamp.now()` in a scoped way.
 
@@ -252,6 +318,8 @@ Run the Nx build targets or package scripts to generate both ESM and CJS outputs
 npx nx run firestore-admin:build
 npx nx run firestore-functions:build
 npx nx run auth-context:build
+npx nx run cloud-storage:build
+npx nx run storage-mock:build
 ```
 
 ### 3. Sanity check before publishing
@@ -296,6 +364,8 @@ Tag each package individually:
 git tag -a firestore-admin-v0.0.1 -m "firestore-admin v0.0.1"
 git tag -a firestore-functions-v0.0.1 -m "firestore-functions v0.0.1"
 git tag -a auth-context-v0.0.1 -m "auth-context v0.0.1"
+git tag -a cloud-storage-v0.0.1 -m "cloud-storage v0.0.1"
+git tag -a storage-mock-v0.0.1 -m "storage-mock v0.0.1"
 git push --tags
 ```
 

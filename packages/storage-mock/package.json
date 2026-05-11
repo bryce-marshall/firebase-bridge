@@ -19,21 +19,40 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/esm/index.d.ts",
-      "require": "./dist/cjs/index.js",
-      "import": "./dist/esm/index.js"
+      "types": {
+        "import": "./dist/esm/index.d.ts",
+        "require": "./dist/esm/index.d.cts"
+      },
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
     },
     "./v1": {
-      "types": "./dist/esm/lib/v1/index.d.ts",
-      "require": "./dist/cjs/lib/v1/index.js",
-      "import": "./dist/esm/lib/v1/index.js"
+      "types": {
+        "import": "./dist/esm/lib/v1/index.d.ts",
+        "require": "./dist/esm/lib/v1/index.d.cts"
+      },
+      "import": "./dist/esm/lib/v1/index.js",
+      "require": "./dist/cjs/lib/v1/index.js"
     },
     "./v2": {
-      "types": "./dist/esm/lib/v2/index.d.ts",
-      "require": "./dist/cjs/lib/v2/index.js",
-      "import": "./dist/esm/lib/v2/index.js"
+      "types": {
+        "import": "./dist/esm/lib/v2/index.d.ts",
+        "require": "./dist/esm/lib/v2/index.d.cts"
+      },
+      "import": "./dist/esm/lib/v2/index.js",
+      "require": "./dist/cjs/lib/v2/index.js"
     },
     "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "v1": [
+        "dist/esm/lib/v1/index.d.ts"
+      ],
+      "v2": [
+        "dist/esm/lib/v2/index.d.ts"
+      ]
+    }
   },
   "files": [
     "dist/**/*",

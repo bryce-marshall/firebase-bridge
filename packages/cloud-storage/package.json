@@ -19,9 +19,12 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/esm/index.d.ts",
-      "require": "./dist/cjs/index.js",
-      "import": "./dist/esm/index.js"
+      "types": {
+        "import": "./dist/esm/index.d.ts",
+        "require": "./dist/esm/index.d.cts"
+      },
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
     },
     "./package.json": "./package.json"
   },
