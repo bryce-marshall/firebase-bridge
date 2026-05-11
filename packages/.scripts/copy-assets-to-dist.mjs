@@ -25,9 +25,9 @@ export function copyAssetsToDist(projectRoot) {
     readFileSync(resolve(ASSETS, 'package.json'), 'utf8')
   );
   const distPkg = {
+    ...assetsPkg,
     name: rootPkg.name,
     version: rootPkg.version,
-    ...assetsPkg,
   };
   writeFileSync(
     resolve(DIST, 'package.json'),
