@@ -71,23 +71,29 @@ class BucketState {
   nextGeneration = 1;
 }
 
+/** In-memory Cloud Storage mock that can create isolated test controllers. */
 export class StorageMock {
   private readonly buckets = new Map<string, BucketState>();
   private readonly controllers = new Set<InMemoryStorageController>();
   private readonly nowSource: StorageTimeSource;
+
+  /** Signer used by controllers unless they provide their own signer. */
   readonly signedUrlSigner: StorageSignedUrlSigner;
 
+  /** Creates an in-memory storage mock. */
   constructor(options?: StorageMockOptions) {
     this.nowSource = options?.now ?? (() => Date.now());
     this.signedUrlSigner = options?.signedUrlSigner ?? defaultSignedUrlSigner;
   }
 
+  /** Creates a controller backed by this mock's shared bucket state. */
   createStorage(options?: CreateStorageOptions): StorageController {
     const ctrl = new InMemoryStorageController(this, options);
     this.controllers.add(ctrl);
     return ctrl;
   }
 
+  /** Clears all objects in a bucket and advances controller epochs. */
   reset(bucket: CloudStorageBucketId): void {
     const state = this.buckets.get(bucket);
     if (!state) return;
@@ -95,21 +101,25 @@ export class StorageMock {
     this.controllers.forEach((ctrl) => ctrl.bumpEpoch('reset'));
   }
 
+  /** Clears all objects in all buckets and advances controller epochs. */
   resetAll(): void {
     this.buckets.forEach((bucket) => bucket.objects.clear());
     this.controllers.forEach((ctrl) => ctrl.bumpEpoch('reset'));
   }
 
+  /** Deletes a bucket and advances controller epochs when it existed. */
   delete(bucket: CloudStorageBucketId): void {
     if (!this.buckets.delete(bucket)) return;
     this.controllers.forEach((ctrl) => ctrl.bumpEpoch('delete'));
   }
 
+  /** Deletes all buckets and advances controller epochs. */
   deleteAll(): void {
     this.buckets.clear();
     this.controllers.forEach((ctrl) => ctrl.bumpEpoch('delete'));
   }
 
+  /** Gets an existing bucket state or creates a new empty bucket state. */
   getBucket(bucketId: string): BucketState {
     let bucket = this.buckets.get(bucketId);
     if (!bucket) {
@@ -119,10 +129,12 @@ export class StorageMock {
     return bucket;
   }
 
+  /** Gets bucket state only when the bucket already exists. */
   maybeBucket(bucketId: string): BucketState | undefined {
     return this.buckets.get(bucketId);
   }
 
+  /** Returns the current mock time in epoch milliseconds. */
   now(): number {
     return this.nowSource();
   }

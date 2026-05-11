@@ -24,8 +24,10 @@ type V1StorageFunction = CloudFunction<ObjectMetadataLike> & {
   };
 };
 
+/** Payload passed to Firebase v1 Cloud Storage trigger handlers. */
 export type TriggerPayload = ObjectMetadataLike;
 
+/** Registers a Firebase v1 Cloud Storage trigger handler against a mock controller. */
 export function registerTrigger(
   ctrl: StorageController,
   handler: CloudFunction<ObjectMetadataLike>,

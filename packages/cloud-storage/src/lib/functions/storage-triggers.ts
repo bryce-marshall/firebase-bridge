@@ -13,16 +13,22 @@ type V2StorageEvent = Parameters<
   Parameters<V2StorageModule['onObjectFinalized']>[1]
 >[0];
 
+/** Options shared by Cloud Storage trigger wrappers. */
 export interface CloudStorageTriggerOptions<TPlatform> {
+  /** Optional bucket filter for the Firebase trigger. */
   readonly bucket?: string;
+
+  /** Resolves the platform object passed to each trigger handler. */
   readonly platform: () => TPlatform | Promise<TPlatform>;
 }
 
+/** Handler invoked with a normalized Cloud Storage event and platform object. */
 export type CloudStorageTriggerHandler<TPlatform> = (
   event: CloudStorageObjectEvent,
   platform: TPlatform
 ) => unknown | Promise<unknown>;
 
+/** Registers a v2 Cloud Storage object-finalized trigger. */
 export function onObjectFinalized<TPlatform>(
   options: CloudStorageTriggerOptions<TPlatform>,
   handler: CloudStorageTriggerHandler<TPlatform>
@@ -30,6 +36,7 @@ export function onObjectFinalized<TPlatform>(
   return wrapV2('finalized', options, handler);
 }
 
+/** Registers a v2 Cloud Storage object-deleted trigger. */
 export function onObjectDeleted<TPlatform>(
   options: CloudStorageTriggerOptions<TPlatform>,
   handler: CloudStorageTriggerHandler<TPlatform>
@@ -37,6 +44,7 @@ export function onObjectDeleted<TPlatform>(
   return wrapV2('deleted', options, handler);
 }
 
+/** Registers a v2 Cloud Storage object-archived trigger. */
 export function onObjectArchived<TPlatform>(
   options: CloudStorageTriggerOptions<TPlatform>,
   handler: CloudStorageTriggerHandler<TPlatform>
@@ -44,6 +52,7 @@ export function onObjectArchived<TPlatform>(
   return wrapV2('archived', options, handler);
 }
 
+/** Registers a v2 Cloud Storage object metadata-updated trigger. */
 export function onObjectMetadataUpdated<TPlatform>(
   options: CloudStorageTriggerOptions<TPlatform>,
   handler: CloudStorageTriggerHandler<TPlatform>

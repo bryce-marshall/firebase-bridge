@@ -23,8 +23,10 @@ type V2StorageFunction = CloudFunction<CloudEvent<unknown>> & {
   };
 };
 
+/** Payload passed to Firebase v2 Cloud Storage trigger handlers. */
 export type StorageEventLike<T = unknown> = StorageCloudEventLike<T>;
 
+/** Registers a Firebase v2 Cloud Storage trigger handler against a mock controller. */
 export function registerTrigger<T extends CloudEvent<unknown>>(
   ctrl: StorageController,
   handler: CloudFunction<T>,

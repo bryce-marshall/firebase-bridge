@@ -24,8 +24,12 @@ import {
 } from './v1/register-trigger.js';
 import { registerTrigger as registerTriggerV2 } from './v2/register-trigger.js';
 
+/** Registrar passed to orchestrator setup for v1 and v2 storage triggers. */
 export interface StorageTriggerRegistrar<TKey extends TriggerKey> {
+  /** Registers a v1 Cloud Storage trigger handler under a key. */
   v1(key: TKey, handler: CloudFunctionV1<TriggerPayloadV1>): void;
+
+  /** Registers a v2 Cloud Storage trigger handler under a key. */
   v2<T extends CloudEvent<unknown>>(key: TKey, handler: CloudFunctionV2<T>): void;
 }
 
@@ -99,6 +103,7 @@ class WaitHandle<TKey extends TriggerKey, TArg> {
   }
 }
 
+/** Coordinates mock trigger registration, delivery, observation, and waits. */
 export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
   private _epoch = 0;
   private _suspended = false;
@@ -107,6 +112,7 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
   private readonly errorWatchers = new Map<symbol, StorageTriggerErrorWatcher<TKey>>();
   private unsubLifecycle: (() => void) | undefined;
 
+  /** Creates an orchestrator and registers the triggers declared by the callback. */
   constructor(
     ctrl: StorageController,
     register: (registrar: StorageTriggerRegistrar<TKey>) => void
@@ -182,22 +188,27 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
     this.all(true);
   }
 
+  /** Current controller epoch accepted by this orchestrator. */
   get epoch(): number {
     return this._epoch;
   }
 
+  /** Whether trigger delivery is temporarily suspended. */
   get suspended(): boolean {
     return this._suspended;
   }
 
+  /** Enables or disables trigger delivery without unregistering stubs. */
   set suspended(value: boolean) {
     this._suspended = !!value;
   }
 
+  /** Whether this orchestrator has been disposed. */
   get isDisposed(): boolean {
     return this.unsubLifecycle == undefined;
   }
 
+  /** Disposes this orchestrator and detaches all registered trigger stubs. */
   dispose(): void {
     if (!this.unsubLifecycle) return;
     this.detach();
@@ -206,6 +217,7 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
     this.unsubLifecycle = undefined;
   }
 
+  /** Enables or disables every registered trigger. */
   all(enable: boolean): void {
     this.assertNotDisposed();
     const keys = [...this.stubs.keys()];
@@ -213,6 +225,7 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
     else this.disable(...keys);
   }
 
+  /** Enables the trigger stubs associated with the given keys. */
   enable(...keys: TKey[]): void {
     this.assertNotDisposed();
     keys.forEach((key) => {
@@ -221,6 +234,7 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
     });
   }
 
+  /** Disables the trigger stubs associated with the given keys. */
   disable(...keys: TKey[]): void {
     this.assertNotDisposed();
     keys.forEach((key) => {
@@ -229,11 +243,13 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
     });
   }
 
+  /** Returns whether a trigger stub is currently enabled. */
   isEnabled(key: TKey): boolean {
     this.assertNotDisposed();
     return this.stubs.get(key)?.active === true;
   }
 
+  /** Gets execution counters for a trigger key. */
   getStats(key: TKey): StorageTriggerStats<TKey> {
     this.assertNotDisposed();
     const stats = this.stubs.get(key)?.stats ?? {
@@ -244,6 +260,7 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
     return Object.freeze({ key, ...stats });
   }
 
+  /** Observes before, after, and error phases for a trigger key. */
   observe(key: TKey, observer: StorageTriggerObserver<TKey>): () => void {
     this.assertNotDisposed();
     const stub = this.requireStub(key);
@@ -254,6 +271,7 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
     };
   }
 
+  /** Registers an after-phase callback for a trigger key. */
   on(
     key: TKey,
     callback: (arg: StorageOrchestratorEventArg<TKey>) => void
@@ -261,18 +279,21 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
     return this.observe(key, { after: callback });
   }
 
+  /** Observes before, after, and error phases for every trigger key. */
   observeAll(observer: StorageTriggerObserver<TKey>): () => void {
     this.assertNotDisposed();
     const unsubs = [...this.stubs.keys()].map((key) => this.observe(key, observer));
     return () => unsubs.forEach((fn) => fn());
   }
 
+  /** Registers an after-phase callback for every trigger key. */
   onAll(
     callback: (arg: StorageOrchestratorEventArg<TKey>) => void
   ): () => void {
     return this.observeAll({ after: callback });
   }
 
+  /** Watches errors from any trigger or observer. */
   watchErrors(callback: StorageTriggerErrorWatcher<TKey>): () => void {
     this.assertNotDisposed();
     const id = Symbol();
@@ -282,6 +303,7 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
     };
   }
 
+  /** Waits for a trigger event matching the predicate. */
   wait(
     key: TKey,
     predicate: (arg: StorageOrchestratorEventArg<TKey>) => boolean,
@@ -290,6 +312,7 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
     return this.registerWaitHandle(key, predicate, (stub) => stub.waitHandles, options);
   }
 
+  /** Waits for the next completed trigger event for a key. */
   waitOne(
     key: TKey,
     options?: WaitOptions
@@ -297,6 +320,7 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
     return this.wait(key, () => true, options);
   }
 
+  /** Waits for a trigger error event matching the predicate. */
   waitError(
     key: TKey,
     predicate: (arg: StorageOrchestratorErrorEventArg<TKey>) => boolean,
@@ -310,6 +334,7 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
     );
   }
 
+  /** Waits for the next trigger error event for a key. */
   waitOneError(
     key: TKey,
     options?: WaitErrorOptions
@@ -317,10 +342,12 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
     return this.waitError(key, () => true, options);
   }
 
+  /** Re-attaches all trigger stubs. */
   attach(): void {
     this.all(true);
   }
 
+  /** Detaches trigger stubs, observers, and pending waits without disposing. */
   detach(): void {
     if (this.isDisposed) return;
     this.clearInterrupt();
@@ -332,6 +359,7 @@ export class StorageTriggerOrchestrator<TKey extends TriggerKey> {
     });
   }
 
+  /** Resets counters, observers, waits, and trigger subscriptions. */
   reset(): void {
     if (this.isDisposed) return;
     this.detach();

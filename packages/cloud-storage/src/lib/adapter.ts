@@ -62,11 +62,16 @@ type ProviderMetadata = Record<string, unknown> & {
   updated?: string | Date;
 };
 
+/** Options for creating a Firebase Admin backed Cloud Storage service. */
 export interface FirebaseCloudStorageServiceOptions {
+  /** Firebase app used to resolve Storage when a Storage instance is not supplied. */
   readonly app?: App;
+
+  /** Firebase Admin Storage instance to wrap directly. */
   readonly storage?: Storage;
 }
 
+/** Creates a Cloud Storage service backed by Firebase Admin Storage. */
 export function createFirebaseCloudStorageService(
   options?: FirebaseCloudStorageServiceOptions
 ): CloudStorageService {
@@ -75,9 +80,12 @@ export function createFirebaseCloudStorageService(
   );
 }
 
+/** Firebase Admin backed implementation of the Cloud Storage service contract. */
 export class FirebaseCloudStorageService implements CloudStorageService {
+  /** Creates a service that resolves buckets from a Firebase Admin Storage instance. */
   constructor(private readonly storage: Storage) {}
 
+  /** Resolves the default bucket or the bucket with the given id. */
   bucket(bucketId?: CloudStorageBucketId): CloudStorageBucket {
     validateBucketId(bucketId);
     try {
