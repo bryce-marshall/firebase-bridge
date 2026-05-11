@@ -250,7 +250,15 @@ class FirebaseCloudStorageBucket implements CloudStorageBucket {
   ): Promise<CloudStorageSignedUrlResult> {
     validatePath(path);
     try {
-      const [url] = await this.file(path).getSignedUrl({
+      const file = this.file(path);
+      const [exists] = await file.exists();
+      if (!exists) {
+        throw cloudStorageError(
+          'storage/object-not-found',
+          `Object "${path}" was not found.`
+        );
+      }
+      const [url] = await file.getSignedUrl({
         action: 'read',
         expires: options.expiresAt,
       });

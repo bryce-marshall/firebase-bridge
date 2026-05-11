@@ -346,8 +346,10 @@ class InMemoryStorageController implements StorageController {
     this.failIfRequested('setMetadata', bucketId, path);
     const bucket = this.mock.maybeBucket(bucketId);
     const previous = bucket?.objects.get(path);
+    if (metadata.precondition) {
+      this.assertPrecondition(previous, metadata.precondition, path);
+    }
     if (!bucket || !previous) throw this.objectNotFound(path);
-    this.assertPrecondition(previous, metadata.precondition, path);
     const next = this.makeMetadata(bucketId, path, previous.data, metadata, {
       previous,
       generation: previous.metadata.generation,
@@ -421,7 +423,9 @@ class InMemoryStorageController implements StorageController {
     const generation = options.generation ?? String(bucket.nextGeneration++);
     const now = this.nowDate();
     const createdAt = previous?.createdAt ?? now;
-    const customMetadata = input?.customMetadata ?? previous?.customMetadata ?? {};
+    const customMetadata = input?.customMetadata
+      ? { ...(previous?.customMetadata ?? {}), ...input.customMetadata }
+      : previous?.customMetadata ?? {};
     const metadata = {
       bucketId,
       path,
