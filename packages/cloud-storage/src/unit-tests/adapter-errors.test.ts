@@ -127,6 +127,26 @@ describe('FirebaseCloudStorageService adapter error mapping', () => {
       expires: expiresAt,
     });
   });
+
+  it('does not sign missing objects with fake provider support', async () => {
+    const getSignedUrl = jest.fn();
+    const service = new FirebaseCloudStorageService(
+      fakeStorage({
+        file: () =>
+          fakeFile({
+            exists: async () => [false],
+            getSignedUrl,
+          }),
+      })
+    );
+
+    await expect(
+      service.bucket('signed.test').createSignedReadUrl('missing.txt', {
+        expiresAt: new Date('2026-01-02T00:00:00.000Z'),
+      })
+    ).rejects.toMatchObject({ code: 'storage/object-not-found' });
+    expect(getSignedUrl).not.toHaveBeenCalled();
+  });
 });
 
 function fakeStorage(bucketOverrides: Record<string, unknown>) {

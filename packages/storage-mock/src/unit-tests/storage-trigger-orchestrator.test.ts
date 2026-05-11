@@ -183,6 +183,23 @@ describe('StorageTriggerOrchestrator', () => {
     await expect(reset).rejects.toThrow('cancelled');
   });
 
+  it('treats detach, reset, and dispose as no-ops after disposal', () => {
+    const ctrl = new StorageMock().createStorage({ defaultBucket: 'orch.test' });
+    const orchestrator = new StorageTriggerOrchestrator<Key>(ctrl, (reg) => {
+      reg.v2(
+        Key.Finalized,
+        onObjectFinalized({ bucket: 'orch.test' }, () => undefined)
+      );
+    });
+
+    orchestrator.dispose();
+
+    expect(() => orchestrator.detach()).not.toThrow();
+    expect(() => orchestrator.reset()).not.toThrow();
+    expect(() => orchestrator.dispose()).not.toThrow();
+    expect(orchestrator.isDisposed).toBe(true);
+  });
+
   it('reports observer failures through watchErrors and keeps executing handlers', async () => {
     const ctrl = new StorageMock().createStorage({ defaultBucket: 'orch.test' });
     const bucket = ctrl.service().bucket();
