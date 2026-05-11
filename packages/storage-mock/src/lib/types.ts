@@ -5,6 +5,8 @@ import type {
   CloudStorageWritableData,
   CloudStorageReadTextOptions,
   CloudStorageObjectMetadata,
+  CloudStorageSignedReadUrlOptions,
+  CloudStorageSignedUrlResult,
 } from '@firebase-bridge/cloud-storage';
 
 export type StorageOperationName =
@@ -23,11 +25,24 @@ export interface CreateStorageOptions {
   readonly defaultBucket?: CloudStorageBucketId;
   readonly projectId?: string;
   readonly location?: string;
+  readonly signedUrlSigner?: StorageSignedUrlSigner;
 }
 
 export interface StorageMockOptions {
   readonly now?: () => number;
+  readonly signedUrlSigner?: StorageSignedUrlSigner;
 }
+
+export interface StorageSignedUrlSignerArg {
+  readonly bucketId: CloudStorageBucketId;
+  readonly path: CloudStorageObjectPath;
+  readonly options: CloudStorageSignedReadUrlOptions;
+  readonly metadata: CloudStorageObjectMetadata;
+}
+
+export type StorageSignedUrlSigner = (
+  arg: StorageSignedUrlSignerArg
+) => CloudStorageSignedUrlResult | Promise<CloudStorageSignedUrlResult>;
 
 export interface StorageChangeRecord extends CloudStorageObjectEvent {
   readonly epoch: number;

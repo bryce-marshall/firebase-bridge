@@ -280,6 +280,102 @@ describe('StorageMock test controls and events', () => {
     });
   });
 
+  it('uses a configured mock signed URL signer', async () => {
+    const signer = jest.fn(async ({ bucketId, path, metadata, options }) => ({
+      url: `https://signer.test/${bucketId}/${path}?generation=${metadata.generation}`,
+      expiresAt: options.expiresAt,
+    }));
+    const ctrl = new StorageMock({ signedUrlSigner: signer }).createStorage({
+      defaultBucket: 'signed.test',
+    });
+    const bucket = ctrl.service().bucket();
+    const expiresAt = new Date('2026-01-02T00:00:00.000Z');
+    const write = await bucket.writeText('custom.txt', 'signed');
+
+    await expect(
+      bucket.createSignedReadUrl('custom.txt', { expiresAt })
+    ).resolves.toEqual({
+      url: `https://signer.test/signed.test/custom.txt?generation=${write.metadata.generation}`,
+      expiresAt,
+    });
+    expect(signer).toHaveBeenCalledWith({
+      bucketId: 'signed.test',
+      path: 'custom.txt',
+      metadata: write.metadata,
+      options: { expiresAt },
+    });
+  });
+
+  it('allows controller signed URL signer options to override the mock default', async () => {
+    const mockSigner = jest.fn(() => ({
+      url: 'https://signer.test/mock',
+      expiresAt: new Date('2026-01-02T00:00:00.000Z'),
+    }));
+    const controllerSigner = jest.fn(({ options }) => ({
+      url: 'https://signer.test/controller',
+      expiresAt: options.expiresAt,
+    }));
+    const ctrl = new StorageMock({ signedUrlSigner: mockSigner }).createStorage({
+      defaultBucket: 'signed.test',
+      signedUrlSigner: controllerSigner,
+    });
+    const bucket = ctrl.service().bucket();
+    const expiresAt = new Date('2026-01-02T00:00:00.000Z');
+    await bucket.writeText('override.txt', 'signed');
+
+    await expect(
+      bucket.createSignedReadUrl('override.txt', { expiresAt })
+    ).resolves.toEqual({
+      url: 'https://signer.test/controller',
+      expiresAt,
+    });
+    expect(controllerSigner).toHaveBeenCalledTimes(1);
+    expect(mockSigner).not.toHaveBeenCalled();
+  });
+
+  it('applies standard signed URL validation and object errors before signing', async () => {
+    const signer = jest.fn(({ options }) => ({
+      url: 'https://signer.test/unused',
+      expiresAt: options.expiresAt,
+    }));
+    const ctrl = new StorageMock({ signedUrlSigner: signer }).createStorage({
+      defaultBucket: 'signed.test',
+    });
+    const bucket = ctrl.service().bucket();
+    const expiresAt = new Date('2026-01-02T00:00:00.000Z');
+
+    await expect(bucket.createSignedReadUrl('', { expiresAt })).rejects.toMatchObject({
+      code: 'storage/invalid-path',
+    });
+    await expect(
+      bucket.createSignedReadUrl('missing.txt', { expiresAt })
+    ).rejects.toMatchObject({
+      code: 'storage/object-not-found',
+    });
+    expect(signer).not.toHaveBeenCalled();
+  });
+
+  it('applies injected signed URL failures before signing', async () => {
+    const signer = jest.fn(({ options }) => ({
+      url: 'https://signer.test/unused',
+      expiresAt: options.expiresAt,
+    }));
+    const ctrl = new StorageMock({ signedUrlSigner: signer }).createStorage({
+      defaultBucket: 'signed.test',
+    });
+    const bucket = ctrl.service().bucket();
+    const expiresAt = new Date('2026-01-02T00:00:00.000Z');
+    await bucket.writeText('fail.txt', 'signed');
+    ctrl.failNext({ operation: 'signedUrl', path: 'fail.txt' });
+
+    await expect(
+      bucket.createSignedReadUrl('fail.txt', { expiresAt })
+    ).rejects.toMatchObject({
+      code: 'storage/unavailable',
+    });
+    expect(signer).not.toHaveBeenCalled();
+  });
+
   it('leaves metadata unchanged after injected metadata failures', async () => {
     const ctrl = new StorageMock().createStorage({ defaultBucket: 'fail.test' });
     const bucket = ctrl.service().bucket();

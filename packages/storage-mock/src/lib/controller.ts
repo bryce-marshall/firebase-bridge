@@ -36,6 +36,7 @@ import {
   StorageOperationName,
   StorageOperationRecord,
   StorageSeedObjectOptions,
+  StorageSignedUrlSigner,
   StorageTestClock,
   StorageTimeSource,
   StorageTestObjectSnapshot,
@@ -44,6 +45,18 @@ import {
 const DEFAULT_BUCKET = 'default.test';
 const DEFAULT_PROJECT = 'default-project';
 const DEFAULT_LOCATION = 'nam5';
+
+const defaultSignedUrlSigner: StorageSignedUrlSigner = ({
+  bucketId,
+  path,
+  options,
+}) => {
+  const encoded = encodeURIComponent(path);
+  return {
+    url: `https://storage-mock.local/${encodeURIComponent(bucketId)}/${encoded}?expires=${options.expiresAt.getTime()}`,
+    expiresAt: new Date(options.expiresAt),
+  };
+};
 
 interface StoredObject {
   readonly data: Uint8Array;
@@ -59,9 +72,11 @@ export class StorageMock {
   private readonly buckets = new Map<string, BucketState>();
   private readonly controllers = new Set<InMemoryStorageController>();
   private readonly nowSource: StorageTimeSource;
+  readonly signedUrlSigner: StorageSignedUrlSigner;
 
   constructor(options?: StorageMockOptions) {
     this.nowSource = options?.now ?? (() => Date.now());
+    this.signedUrlSigner = options?.signedUrlSigner ?? defaultSignedUrlSigner;
   }
 
   createStorage(options?: CreateStorageOptions): StorageController {
@@ -116,6 +131,7 @@ class InMemoryStorageController implements StorageController {
   private readonly operationLog: StorageOperationRecord[] = [];
   private readonly failures: StorageFailureRule[] = [];
   private nowSource: StorageTimeSource;
+  private readonly signedUrlSigner: StorageSignedUrlSigner;
   private _epoch = 0;
 
   readonly defaultBucket: CloudStorageBucketId;
@@ -129,6 +145,7 @@ class InMemoryStorageController implements StorageController {
     this.defaultBucket = options?.defaultBucket ?? DEFAULT_BUCKET;
     this.projectId = options?.projectId ?? DEFAULT_PROJECT;
     this.location = options?.location ?? DEFAULT_LOCATION;
+    this.signedUrlSigner = options?.signedUrlSigner ?? mock.signedUrlSigner;
     this.nowSource = () => mock.now();
   }
 
@@ -388,19 +405,24 @@ class InMemoryStorageController implements StorageController {
     };
   }
 
-  createSignedReadUrl(
+  async createSignedReadUrl(
     bucketId: string,
     path: string,
     options: CloudStorageSignedReadUrlOptions
-  ): CloudStorageSignedUrlResult {
+  ): Promise<CloudStorageSignedUrlResult> {
     this.assertPath(path);
     this.failIfRequested('signedUrl', bucketId, path);
-    this.requireObject(bucketId, path);
+    const object = this.requireObject(bucketId, path);
+    const signed = await this.signedUrlSigner({
+      bucketId,
+      path,
+      options,
+      metadata: object.metadata,
+    });
     this.log('signedUrl', bucketId, path, true);
-    const encoded = encodeURIComponent(path);
     return {
-      url: `https://storage-mock.local/${encodeURIComponent(bucketId)}/${encoded}?expires=${options.expiresAt.getTime()}`,
-      expiresAt: new Date(options.expiresAt),
+      url: signed.url,
+      expiresAt: new Date(signed.expiresAt),
     };
   }
 

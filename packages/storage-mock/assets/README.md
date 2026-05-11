@@ -21,7 +21,9 @@ Unlike `@firebase-bridge/firestore-admin`, this package does not replace or emul
 
 The mock follows the same intentionally narrow validation policy as `@firebase-bridge/cloud-storage`: explicit bucket ids must be non-empty and must not contain `/` or control characters; object paths must be non-empty and must not start with `/` or contain control characters.
 
-Mock signed read URLs are deterministic for a given bucket, path, and expiry so tests can assert them directly. They are not real Google Cloud Storage signed URLs and should only be treated as local test artifacts.
+Mock signed read URLs use a deterministic default signer for a given bucket, path, and expiry so tests can assert them directly. They are not real Google Cloud Storage signed URLs and should only be treated as local test artifacts.
+
+Tests that need application-specific URL shapes can provide `signedUrlSigner` to `new StorageMock({ signedUrlSigner })` or override it per controller with `createStorage({ signedUrlSigner })`. The mock still applies path validation, failure injection, and object existence checks before invoking the signer.
 
 ## Important Constraint
 
