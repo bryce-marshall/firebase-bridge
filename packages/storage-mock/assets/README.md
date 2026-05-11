@@ -17,6 +17,12 @@ Unlike `@firebase-bridge/firestore-admin`, this package does not replace or emul
 - direct v1/v2 `firebase-functions` Storage trigger registration
 - `StorageTriggerOrchestrator` with enablement, waiters, observers, and error capture
 
+## Validation And Signed URLs
+
+The mock follows the same intentionally narrow validation policy as `@firebase-bridge/cloud-storage`: explicit bucket ids must be non-empty and must not contain `/` or control characters; object paths must be non-empty and must not start with `/` or contain control characters.
+
+Mock signed read URLs are deterministic for a given bucket, path, and expiry so tests can assert them directly. They are not real Google Cloud Storage signed URLs and should only be treated as local test artifacts.
+
 ## Important Constraint
 
 Production code that directly calls `firebase-admin.storage()` cannot be automatically exercised against this mock. Put Cloud Storage access behind `@firebase-bridge/cloud-storage` or your own platform/DI layer.

@@ -16,6 +16,19 @@ Unlike `@firebase-bridge/firestore-admin`, this package does not replace or emul
 - Firebase Admin-backed adapter
 - lightweight production v2 trigger wrapper helpers
 
+## Validation And Errors
+
+The abstraction normalizes common failure paths into `CloudStorageError` codes instead of exposing raw Firebase Admin or Google Cloud Storage SDK errors. It performs a deliberately narrow validation pass before provider calls:
+
+- explicit bucket ids must be non-empty and must not contain `/` or control characters
+- object paths must be non-empty and must not start with `/` or contain control characters
+
+This validation is not intended to duplicate every Google Cloud Storage naming rule. Provider-specific bucket naming failures may still be returned by the underlying SDK and mapped to the closest stable `CloudStorageError.code`.
+
+## Signed Read URLs
+
+`createSignedReadUrl()` requires the object to exist and returns the provider-generated URL plus the requested `expiresAt`. In production, signing support depends on Firebase Admin / Google Cloud Storage credentials. Emulator-backed tests should not assume signing credentials are available; use adapter unit tests with fake provider objects for credential-independent signed URL behavior.
+
 ## Non-Goals
 
 This package does not provide Storage Rules emulation, resumable uploads, streaming APIs, ACL/public access behavior, retry/backoff simulation, or Google Cloud Storage emulator compatibility.
