@@ -124,6 +124,34 @@ describe('StorageMock v1 direct trigger registration', () => {
     expect(calls).toEqual(['keep.csv']);
   });
 
+  it('evaluates predicates only after kind and bucket matching', async () => {
+    const ctrl = new StorageMock().createStorage({ defaultBucket: 'v1.test' });
+    const bucket = ctrl.service().bucket();
+    const other = ctrl.service().bucket('other.test');
+    const predicatePaths: string[] = [];
+    const calls: string[] = [];
+
+    registerTrigger(
+      ctrl,
+      v1.storage.bucket('v1.test').object().onFinalize((object) => {
+        calls.push(object.name ?? '');
+      }),
+      (record) => {
+        predicatePaths.push(record.path);
+        return true;
+      }
+    );
+
+    await other.writeText('other.csv', 'other');
+    await bucket.writeText('file.csv', 'file');
+    await bucket.setMetadata('file.csv', { cacheControl: 'private' });
+    await bucket.delete('file.csv');
+    await flush();
+
+    expect(predicatePaths).toEqual(['file.csv']);
+    expect(calls).toEqual(['file.csv']);
+  });
+
   it('allows duplicate direct registration of the same function', async () => {
     const ctrl = new StorageMock().createStorage({ defaultBucket: 'v1.test' });
     const bucket = ctrl.service().bucket();

@@ -175,6 +175,16 @@ describe('StorageMock test controls and events', () => {
     expect(ctrl.listObjects()).toEqual([]);
   });
 
+  it('does not bump epoch when resetting or deleting missing buckets', () => {
+    const ctrl = new StorageMock().createStorage({ defaultBucket: 'reset.test' });
+    const initialEpoch = ctrl.epoch;
+
+    ctrl.reset('missing.test');
+    ctrl.delete('missing.test');
+
+    expect(ctrl.epoch).toBe(initialEpoch);
+  });
+
   it('injects scoped failures without side effects or events', async () => {
     const ctrl = new StorageMock().createStorage({ defaultBucket: 'fail.test' });
     const bucket = ctrl.service().bucket();

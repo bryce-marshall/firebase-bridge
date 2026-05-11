@@ -81,5 +81,25 @@ export function cloudStorageListingSuite(
         cacheControl: 'private',
       });
     });
+
+    it('does not duplicate entries after metadata-only updates', async () => {
+      await bucket.writeText('dedupe/file.txt', 'one');
+      await bucket.setMetadata('dedupe/file.txt', {
+        cacheControl: 'private',
+      });
+      const updated = await bucket.setMetadata('dedupe/file.txt', {
+        contentType: 'text/plain',
+      });
+
+      const list = await bucket.list({ prefix: 'dedupe/' });
+      expect(list.objects.map((object) => object.path)).toEqual([
+        'dedupe/file.txt',
+      ]);
+      expect(list.objects[0]).toMatchObject({
+        generation: updated.generation,
+        metageneration: updated.metageneration,
+        contentType: 'text/plain',
+      });
+    });
   });
 }

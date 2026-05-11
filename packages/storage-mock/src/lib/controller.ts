@@ -71,7 +71,9 @@ export class StorageMock {
   }
 
   reset(bucket: CloudStorageBucketId): void {
-    this.buckets.get(bucket)?.objects.clear();
+    const state = this.buckets.get(bucket);
+    if (!state) return;
+    state.objects.clear();
     this.controllers.forEach((ctrl) => ctrl.bumpEpoch('reset'));
   }
 
@@ -81,7 +83,7 @@ export class StorageMock {
   }
 
   delete(bucket: CloudStorageBucketId): void {
-    this.buckets.delete(bucket);
+    if (!this.buckets.delete(bucket)) return;
     this.controllers.forEach((ctrl) => ctrl.bumpEpoch('delete'));
   }
 
