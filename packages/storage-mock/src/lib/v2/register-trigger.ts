@@ -1,5 +1,5 @@
 import type { CloudEvent, CloudFunction } from 'firebase-functions/v2';
-import type { StorageController } from '../types.js';
+import type { StorageController } from '../controller.js';
 import {
   enqueueTriggerRun,
   extractBucketFilter,

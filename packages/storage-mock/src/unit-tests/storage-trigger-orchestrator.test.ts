@@ -1,5 +1,5 @@
 import { onObjectDeleted, onObjectFinalized } from 'firebase-functions/v2/storage';
-import { StorageMock, StorageTriggerOrchestrator } from '../index.js';
+import { StorageController, StorageTriggerOrchestrator } from '../index.js';
 import {
   StorageChangeRecord,
   StorageTriggerErrorOrigin,
@@ -12,7 +12,7 @@ enum Key {
 
 describe('StorageTriggerOrchestrator', () => {
   it('manages enablement, observers, stats, and disposal edge cases', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'orch.test' });
+    const ctrl = new StorageController({ defaultBucket: 'orch.test' });
     const bucket = ctrl.service().bucket();
     const calls: string[] = [];
     const observed: string[] = [];
@@ -159,7 +159,7 @@ describe('StorageTriggerOrchestrator', () => {
   });
 
   it('cancels and times out waiters deterministically', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'orch.test' });
+    const ctrl = new StorageController({ defaultBucket: 'orch.test' });
     const bucket = ctrl.service().bucket();
     const orchestrator = new StorageTriggerOrchestrator<Key>(ctrl, (reg) => {
       reg.v2(
@@ -196,7 +196,7 @@ describe('StorageTriggerOrchestrator', () => {
   });
 
   it('treats detach, reset, and dispose as no-ops after disposal', () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'orch.test' });
+    const ctrl = new StorageController({ defaultBucket: 'orch.test' });
     const orchestrator = new StorageTriggerOrchestrator<Key>(ctrl, (reg) => {
       reg.v2(
         Key.Finalized,
@@ -213,7 +213,7 @@ describe('StorageTriggerOrchestrator', () => {
   });
 
   it('reset clears stats and reattaches triggers', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'orch.test' });
+    const ctrl = new StorageController({ defaultBucket: 'orch.test' });
     const bucket = ctrl.service().bucket();
     const calls: string[] = [];
     const orchestrator = new StorageTriggerOrchestrator<Key>(ctrl, (reg) => {
@@ -244,7 +244,7 @@ describe('StorageTriggerOrchestrator', () => {
   });
 
   it('reports observer failures through watchErrors and keeps executing handlers', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'orch.test' });
+    const ctrl = new StorageController({ defaultBucket: 'orch.test' });
     const bucket = ctrl.service().bucket();
     const calls: string[] = [];
     const watchedErrors: unknown[] = [];
@@ -285,7 +285,7 @@ describe('StorageTriggerOrchestrator', () => {
   });
 
   it('waits for matching error predicates', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'orch.test' });
+    const ctrl = new StorageController({ defaultBucket: 'orch.test' });
     const bucket = ctrl.service().bucket();
     const orchestrator = new StorageTriggerOrchestrator<Key>(ctrl, (reg) => {
       reg.v2(
@@ -314,7 +314,7 @@ describe('StorageTriggerOrchestrator', () => {
   });
 
   it('ignores events from old controller epochs', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'orch.test' });
+    const ctrl = new StorageController({ defaultBucket: 'orch.test' });
     const calls: string[] = [];
     const orchestrator = new StorageTriggerOrchestrator<Key>(ctrl, (reg) => {
       reg.v2(

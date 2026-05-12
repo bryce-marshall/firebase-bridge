@@ -3,9 +3,9 @@ import type {
   CloudEvent,
   CloudFunction as CloudFunctionV2,
 } from 'firebase-functions/v2';
+import type { StorageController } from './controller.js';
 import {
   RegisterStorageTriggerOptions,
-  StorageController,
   StorageChangeRecord,
   StorageOrchestratorErrorEventArg,
   StorageOrchestratorEventArg,

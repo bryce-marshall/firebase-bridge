@@ -5,11 +5,10 @@ import {
   cloudStorageMetadataSuite,
   cloudStoragePreconditionsSuite,
 } from 'cloud-storage-test-suites';
-import { StorageMock } from '../index.js';
+import { StorageController } from '../index.js';
 
 function testContext() {
-  const env = new StorageMock();
-  const ctrl = env.createStorage({ defaultBucket: 'lifecycle.test' });
+  const ctrl = new StorageController({ defaultBucket: 'lifecycle.test' });
   return {
     async init(bucketId?: string) {
       ctrl.resetAll();

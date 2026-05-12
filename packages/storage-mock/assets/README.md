@@ -10,7 +10,7 @@
 
 `@firebase-bridge/storage-mock` implements the `@firebase-bridge/cloud-storage` abstraction with deterministic in-memory storage. Tests can write, read, list, update metadata, delete objects, create mock signed read URLs, inspect state, inject failures, and drive Firebase Cloud Storage trigger handlers in-process.
 
-Unlike `@firebase-bridge/firestore-admin`, this package does **not** replace or emulate `firebase-admin.storage()` directly. Production code should depend on `@firebase-bridge/cloud-storage` or your own platform facade, then tests can substitute this mock.
+Unlike `@firebase-bridge/firestore-admin`, this package does **not** patch the Firebase SDK. Production code should depend on `@firebase-bridge/cloud-storage` or your own platform facade, then tests can substitute this mock.
 
 ## When to use it
 
@@ -38,13 +38,13 @@ yarn add -D @firebase-bridge/storage-mock @firebase-bridge/cloud-storage firebas
 ## Quick start
 
 ```ts
-import { StorageMock } from '@firebase-bridge/storage-mock';
+import { StorageController } from '@firebase-bridge/storage-mock';
 
 describe('storage-backed import', () => {
-  const env = new StorageMock({
+  const storage = new StorageController({
+    defaultBucket: 'imports.test',
     now: () => Date.parse('2026-01-01T00:00:00.000Z'),
   });
-  const storage = env.createStorage({ defaultBucket: 'imports.test' });
   const bucket = storage.service().bucket();
 
   afterEach(() => {
@@ -83,9 +83,9 @@ export async function readManifest(storage: CloudStorageService) {
 ```
 
 ```ts
-import { StorageMock } from '@firebase-bridge/storage-mock';
+import { StorageController } from '@firebase-bridge/storage-mock';
 
-const ctrl = new StorageMock().createStorage({ defaultBucket: 'imports.test' });
+const ctrl = new StorageController({ defaultBucket: 'imports.test' });
 ctrl.seedObject('imports.test', 'manifest.json', JSON.stringify({ ok: true }));
 
 await expect(readManifest(ctrl.service())).resolves.toEqual({ ok: true });
@@ -93,20 +93,15 @@ await expect(readManifest(ctrl.service())).resolves.toEqual({ ok: true });
 
 ## Core concepts
 
-### `class StorageMock`
+### `class StorageController`
 
-Top-level environment that owns shared in-memory bucket state.
+Top-level test controller that owns isolated in-memory bucket state.
 
-- `new StorageMock({ now?, signedUrlSigner? })`
-- `createStorage(options?): StorageController`
+- `new StorageController({ defaultBucket?, projectId?, location?, now?, signedUrlSigner? })`
 - `reset(bucket)`, `resetAll()`
 - `delete(bucket)`, `deleteAll()`
 
-Use one `StorageMock` per suite when you want fast resets. Create separate environments when suites must not share any bucket state.
-
-### `StorageController`
-
-Controller returned by `createStorage()`. It exposes the test service and direct inspection controls.
+Use one `StorageController` per suite when you want fast resets. Create separate controllers when suites must not share any bucket state.
 
 - Identity/config: `defaultBucket`, `projectId`, `location`, `epoch`
 - Service: `service(): CloudStorageService`
@@ -255,10 +250,10 @@ expect(signed.url).toBe(
 );
 ```
 
-These are **not** Google Cloud Storage signed URLs. They are local test artifacts. To model application-specific URL formats, pass `signedUrlSigner` to `new StorageMock()` or `createStorage()`:
+These are **not** Google Cloud Storage signed URLs. They are local test artifacts. To model application-specific URL formats, pass `signedUrlSigner` to `new StorageController()`:
 
 ```ts
-const env = new StorageMock({
+const ctrl = new StorageController({
   signedUrlSigner: ({ bucketId, path, options }) => ({
     url: `mock://${bucketId}/${path}?until=${options.expiresAt.toISOString()}`,
     expiresAt: options.expiresAt,
@@ -278,10 +273,10 @@ Matching events are enqueued per registered trigger. A storage operation does no
 
 ```ts
 import { onObjectFinalized } from 'firebase-functions/v2/storage';
-import { StorageMock } from '@firebase-bridge/storage-mock';
+import { StorageController } from '@firebase-bridge/storage-mock';
 import { registerTrigger } from '@firebase-bridge/storage-mock/v2';
 
-const ctrl = new StorageMock().createStorage({ defaultBucket: 'imports.test' });
+const ctrl = new StorageController({ defaultBucket: 'imports.test' });
 const bucket = ctrl.service().bucket();
 const calls: string[] = [];
 
@@ -335,14 +330,14 @@ Errors from predicates, hooks, or handlers are reported to `onError()` and swall
 
 ```ts
 import { onObjectDeleted, onObjectFinalized } from 'firebase-functions/v2/storage';
-import { StorageMock, StorageTriggerOrchestrator } from '@firebase-bridge/storage-mock';
+import { StorageController, StorageTriggerOrchestrator } from '@firebase-bridge/storage-mock';
 
 enum TriggerKey {
   Finalized = 'Finalized',
   Deleted = 'Deleted',
 }
 
-const ctrl = new StorageMock().createStorage({ defaultBucket: 'imports.test' });
+const ctrl = new StorageController({ defaultBucket: 'imports.test' });
 const bucket = ctrl.service().bucket();
 
 const orchestrator = new StorageTriggerOrchestrator<TriggerKey>(ctrl, (reg) => {
@@ -410,7 +405,7 @@ Portable failures reject with `CloudStorageError`. Match on `error.code`, not pr
 
 Main package:
 
-- `StorageMock`
+- `StorageController`
 - `StorageTriggerOrchestrator`
 - test-control, trigger, listener, wait, and observer types
 

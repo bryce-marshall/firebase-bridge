@@ -1,5 +1,5 @@
 import type { CloudFunction } from 'firebase-functions/v1';
-import type { StorageController } from '../types.js';
+import type { StorageController } from '../controller.js';
 import {
   enqueueTriggerRun,
   normalizeRegisterOptions,

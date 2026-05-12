@@ -5,16 +5,16 @@ import {
   onObjectMetadataUpdated,
 } from 'firebase-functions/v2/storage';
 import { CloudStorageError } from '@firebase-bridge/cloud-storage';
-import { StorageMock, StorageTriggerOrchestrator } from '../index.js';
+import { StorageController, StorageTriggerOrchestrator } from '../index.js';
 import { registerTrigger as registerV1 } from '../lib/v1/index.js';
 import { registerTrigger as registerV2 } from '../lib/v2/index.js';
 
-describe('StorageMock', () => {
+describe('StorageController', () => {
   it('supports object lifecycle operations through bucket and object handles', async () => {
-    const env = new StorageMock({
+    const ctrl = new StorageController({
+      defaultBucket: 'imports.test',
       now: () => Date.parse('2026-01-01T00:00:00.000Z'),
     });
-    const ctrl = env.createStorage({ defaultBucket: 'imports.test' });
     const bucket = ctrl.service().bucket();
 
     const write = await bucket.writeText('a/file.txt', 'hello', {
@@ -62,7 +62,7 @@ describe('StorageMock', () => {
   });
 
   it('lists deterministically with prefix and pagination', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'b.test' });
+    const ctrl = new StorageController({ defaultBucket: 'b.test' });
     const bucket = ctrl.service().bucket();
     await bucket.writeText('c.txt', 'c');
     await bucket.writeText('a/1.txt', 'a1');
@@ -82,8 +82,7 @@ describe('StorageMock', () => {
   });
 
   it('supports test controls, operation logs, reset/delete, signed URLs, and failure injection', async () => {
-    const env = new StorageMock();
-    const ctrl = env.createStorage({ defaultBucket: 'b.test' });
+    const ctrl = new StorageController({ defaultBucket: 'b.test' });
     const bucket = ctrl.service().bucket();
 
     ctrl.seedObject('b.test', 'seed.txt', 'seeded');
@@ -108,7 +107,7 @@ describe('StorageMock', () => {
   });
 
   it('emits object lifecycle events only after successful operations', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'b.test' });
+    const ctrl = new StorageController({ defaultBucket: 'b.test' });
     const bucket = ctrl.service().bucket();
     const seen: string[] = [];
     ctrl.onObjectChange((record) => seen.push(record.kind));
@@ -127,7 +126,7 @@ describe('StorageMock', () => {
   });
 
   it('registers v1 and v2 storage triggers with bucket scoping and predicates', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'b.test' });
+    const ctrl = new StorageController({ defaultBucket: 'b.test' });
     const bucket = ctrl.service().bucket('b.test');
     const other = ctrl.service().bucket('other.test');
     const calls: string[] = [];
@@ -162,7 +161,7 @@ describe('StorageMock', () => {
   });
 
   it('orchestrates trigger enablement, waiting, suspension, reset, and errors', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'b.test' });
+    const ctrl = new StorageController({ defaultBucket: 'b.test' });
     const bucket = ctrl.service().bucket();
     enum Key {
       Finalized = 'Finalized',
@@ -224,7 +223,7 @@ describe('StorageMock', () => {
   });
 
   it('rejects duplicate orchestrator keys', () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'b.test' });
+    const ctrl = new StorageController({ defaultBucket: 'b.test' });
     expect(
       () =>
         new StorageTriggerOrchestrator<string>(ctrl, (reg) => {

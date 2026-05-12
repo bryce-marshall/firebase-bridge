@@ -1,13 +1,14 @@
 import * as v1 from 'firebase-functions/v1';
-import { StorageMock } from '../index.js';
+import { StorageController } from '../index.js';
 import { StorageTriggerErrorOrigin } from '../lib/types.js';
 import { registerTrigger } from '../lib/v1/index.js';
 
-describe('StorageMock v1 direct trigger registration', () => {
+describe('StorageController v1 direct trigger registration', () => {
   it('invokes finalized, deleted, and metadata-update handlers with realistic payloads', async () => {
-    const ctrl = new StorageMock({
+    const ctrl = new StorageController({
+      defaultBucket: 'v1.test',
       now: () => Date.parse('2026-03-01T00:00:00.000Z'),
-    }).createStorage({ defaultBucket: 'v1.test' });
+    });
     const bucket = ctrl.service().bucket();
     const calls: string[] = [];
     const contexts: unknown[] = [];
@@ -83,7 +84,7 @@ describe('StorageMock v1 direct trigger registration', () => {
   });
 
   it('honors bucket filters, predicates, predicate errors, and disposer unregister', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'v1.test' });
+    const ctrl = new StorageController({ defaultBucket: 'v1.test' });
     const bucket = ctrl.service().bucket();
     const other = ctrl.service().bucket('other.test');
     const calls: string[] = [];
@@ -125,7 +126,7 @@ describe('StorageMock v1 direct trigger registration', () => {
   });
 
   it('evaluates predicates only after kind and bucket matching', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'v1.test' });
+    const ctrl = new StorageController({ defaultBucket: 'v1.test' });
     const bucket = ctrl.service().bucket();
     const other = ctrl.service().bucket('other.test');
     const predicatePaths: string[] = [];
@@ -153,7 +154,7 @@ describe('StorageMock v1 direct trigger registration', () => {
   });
 
   it('allows duplicate direct registration of the same function', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'v1.test' });
+    const ctrl = new StorageController({ defaultBucket: 'v1.test' });
     const bucket = ctrl.service().bucket();
     const calls: string[] = [];
     const fn = v1.storage.bucket('v1.test').object().onFinalize((object) => {
@@ -172,7 +173,7 @@ describe('StorageMock v1 direct trigger registration', () => {
   });
 
   it('reports handler errors through onError and swallows onError failures', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'v1.test' });
+    const ctrl = new StorageController({ defaultBucket: 'v1.test' });
     const bucket = ctrl.service().bucket();
     const errors: unknown[] = [];
 

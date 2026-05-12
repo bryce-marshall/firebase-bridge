@@ -27,10 +27,9 @@ import {
 import { Listeners } from './listeners.js';
 import {
   CreateStorageOptions,
-  StorageMockOptions,
   StorageChangeListener,
   StorageChangeRecord,
-  StorageController,
+  StorageControllerApi,
   StorageFailureRule,
   StorageLifecycleEventArg,
   StorageLifecycleListener,
@@ -47,7 +46,7 @@ const DEFAULT_BUCKET = 'default.test';
 const DEFAULT_PROJECT = 'default-project';
 const DEFAULT_LOCATION = 'nam5';
 const MOCK_ERROR_CAUSE_MESSAGE =
-  'StorageMock generated this Cloud Storage failure.';
+  'StorageController generated this Cloud Storage failure.';
 
 const defaultSignedUrlSigner: StorageSignedUrlSigner = ({
   bucketId,
@@ -71,76 +70,9 @@ class BucketState {
   nextGeneration = 1;
 }
 
-/** In-memory Cloud Storage mock that can create isolated test controllers. */
-export class StorageMock {
+/** In-memory Cloud Storage test controller with bucket-isolated state. */
+export class StorageController implements StorageControllerApi {
   private readonly buckets = new Map<string, BucketState>();
-  private readonly controllers = new Set<InMemoryStorageController>();
-  private readonly nowSource: StorageTimeSource;
-
-  /** Signer used by controllers unless they provide their own signer. */
-  readonly signedUrlSigner: StorageSignedUrlSigner;
-
-  /** Creates an in-memory storage mock. */
-  constructor(options?: StorageMockOptions) {
-    this.nowSource = options?.now ?? (() => Date.now());
-    this.signedUrlSigner = options?.signedUrlSigner ?? defaultSignedUrlSigner;
-  }
-
-  /** Creates a controller backed by this mock's shared bucket state. */
-  createStorage(options?: CreateStorageOptions): StorageController {
-    const ctrl = new InMemoryStorageController(this, options);
-    this.controllers.add(ctrl);
-    return ctrl;
-  }
-
-  /** Clears all objects in a bucket and advances controller epochs. */
-  reset(bucket: CloudStorageBucketId): void {
-    const state = this.buckets.get(bucket);
-    if (!state) return;
-    state.objects.clear();
-    this.controllers.forEach((ctrl) => ctrl.bumpEpoch('reset'));
-  }
-
-  /** Clears all objects in all buckets and advances controller epochs. */
-  resetAll(): void {
-    this.buckets.forEach((bucket) => bucket.objects.clear());
-    this.controllers.forEach((ctrl) => ctrl.bumpEpoch('reset'));
-  }
-
-  /** Deletes a bucket and advances controller epochs when it existed. */
-  delete(bucket: CloudStorageBucketId): void {
-    if (!this.buckets.delete(bucket)) return;
-    this.controllers.forEach((ctrl) => ctrl.bumpEpoch('delete'));
-  }
-
-  /** Deletes all buckets and advances controller epochs. */
-  deleteAll(): void {
-    this.buckets.clear();
-    this.controllers.forEach((ctrl) => ctrl.bumpEpoch('delete'));
-  }
-
-  /** Gets an existing bucket state or creates a new empty bucket state. */
-  getBucket(bucketId: string): BucketState {
-    let bucket = this.buckets.get(bucketId);
-    if (!bucket) {
-      bucket = new BucketState();
-      this.buckets.set(bucketId, bucket);
-    }
-    return bucket;
-  }
-
-  /** Gets bucket state only when the bucket already exists. */
-  maybeBucket(bucketId: string): BucketState | undefined {
-    return this.buckets.get(bucketId);
-  }
-
-  /** Returns the current mock time in epoch milliseconds. */
-  now(): number {
-    return this.nowSource();
-  }
-}
-
-class InMemoryStorageController implements StorageController {
   private readonly changeListeners = new Listeners<StorageChangeRecord>();
   private readonly lifecycleListeners = new Listeners<StorageLifecycleEventArg>();
   private readonly operationLog: StorageOperationRecord[] = [];
@@ -153,15 +85,12 @@ class InMemoryStorageController implements StorageController {
   readonly projectId: string;
   readonly location: string;
 
-  constructor(
-    private readonly mock: StorageMock,
-    options?: CreateStorageOptions
-  ) {
+  constructor(options?: CreateStorageOptions) {
     this.defaultBucket = options?.defaultBucket ?? DEFAULT_BUCKET;
     this.projectId = options?.projectId ?? DEFAULT_PROJECT;
     this.location = options?.location ?? DEFAULT_LOCATION;
-    this.signedUrlSigner = options?.signedUrlSigner ?? mock.signedUrlSigner;
-    this.nowSource = () => mock.now();
+    this.signedUrlSigner = options?.signedUrlSigner ?? defaultSignedUrlSigner;
+    this.nowSource = options?.now ?? (() => Date.now());
   }
 
   get epoch(): number {
@@ -173,19 +102,25 @@ class InMemoryStorageController implements StorageController {
   }
 
   reset(bucket: CloudStorageBucketId): void {
-    this.mock.reset(bucket);
+    const state = this.buckets.get(bucket);
+    if (!state) return;
+    state.objects.clear();
+    this.bumpEpoch('reset');
   }
 
   resetAll(): void {
-    this.mock.resetAll();
+    this.buckets.forEach((bucket) => bucket.objects.clear());
+    this.bumpEpoch('reset');
   }
 
   delete(bucket: CloudStorageBucketId): void {
-    this.mock.delete(bucket);
+    if (!this.buckets.delete(bucket)) return;
+    this.bumpEpoch('delete');
   }
 
   deleteAll(): void {
-    this.mock.deleteAll();
+    this.buckets.clear();
+    this.bumpEpoch('delete');
   }
 
   seedObject(
@@ -196,7 +131,7 @@ class InMemoryStorageController implements StorageController {
   ): CloudStorageObjectMetadata {
     this.assertPath(path);
     this.failIfRequested('seed', bucketId, path);
-    const bucket = this.mock.getBucket(bucketId);
+    const bucket = this.getBucket(bucketId);
     const previous = bucket.objects.get(path);
     const metadata = this.makeMetadata(bucketId, path, toBytes(data), options, {
       previous,
@@ -214,7 +149,7 @@ class InMemoryStorageController implements StorageController {
     bucketId: CloudStorageBucketId,
     path: CloudStorageObjectPath
   ): StorageTestObjectSnapshot | undefined {
-    const object = this.mock.maybeBucket(bucketId)?.objects.get(path);
+    const object = this.maybeBucket(bucketId)?.objects.get(path);
     return object ? snapshot(bucketId, path, object) : undefined;
   }
 
@@ -233,7 +168,7 @@ class InMemoryStorageController implements StorageController {
     bucketId: CloudStorageBucketId,
     path: CloudStorageObjectPath
   ): boolean {
-    return this.mock.maybeBucket(bucketId)?.objects.has(path) === true;
+    return this.maybeBucket(bucketId)?.objects.has(path) === true;
   }
 
   listObjects(
@@ -241,7 +176,7 @@ class InMemoryStorageController implements StorageController {
   ): readonly StorageTestObjectSnapshot[] {
     const entries: StorageTestObjectSnapshot[] = [];
     const buckets = bucketId
-      ? [[bucketId, this.mock.maybeBucket(bucketId)] as const]
+      ? [[bucketId, this.maybeBucket(bucketId)] as const]
       : [...this.bucketEntries()];
     for (const [id, bucket] of buckets) {
       if (!bucket) continue;
@@ -257,7 +192,7 @@ class InMemoryStorageController implements StorageController {
     path: CloudStorageObjectPath
   ): boolean {
     this.failIfRequested('testDelete', bucketId, path);
-    const deleted = this.mock.maybeBucket(bucketId)?.objects.delete(path) === true;
+    const deleted = this.maybeBucket(bucketId)?.objects.delete(path) === true;
     this.log('testDelete', bucketId, path, true);
     return deleted;
   }
@@ -287,7 +222,7 @@ class InMemoryStorageController implements StorageController {
     return this.lifecycleListeners.register(listener);
   }
 
-  bumpEpoch(type: 'reset' | 'delete'): void {
+  private bumpEpoch(type: 'reset' | 'delete'): void {
     this._epoch += 1;
     this.lifecycleListeners.next({
       type,
@@ -323,7 +258,7 @@ class InMemoryStorageController implements StorageController {
   ): CloudStorageWriteResult {
     this.assertPath(path);
     this.failIfRequested('write', bucketId, path);
-    const bucket = this.mock.getBucket(bucketId);
+    const bucket = this.getBucket(bucketId);
     const previous = bucket.objects.get(path);
     this.assertPrecondition(previous, options?.precondition, path);
     const bytes = toBytes(data);
@@ -347,7 +282,7 @@ class InMemoryStorageController implements StorageController {
   ): CloudStorageDeleteResult {
     this.assertPath(path);
     this.failIfRequested('delete', bucketId, path);
-    const bucket = this.mock.maybeBucket(bucketId);
+    const bucket = this.maybeBucket(bucketId);
     const previous = bucket?.objects.get(path);
     if (!previous) {
       if (options?.ignoreMissing === true) {
@@ -378,7 +313,7 @@ class InMemoryStorageController implements StorageController {
   ): CloudStorageObjectMetadata {
     this.assertPath(path);
     this.failIfRequested('setMetadata', bucketId, path);
-    const bucket = this.mock.maybeBucket(bucketId);
+    const bucket = this.maybeBucket(bucketId);
     const previous = bucket?.objects.get(path);
     if (metadata.precondition) {
       this.assertPrecondition(previous, metadata.precondition, path);
@@ -400,7 +335,7 @@ class InMemoryStorageController implements StorageController {
 
   list(bucketId: string, options?: CloudStorageListOptions): CloudStorageListResult {
     this.failIfRequested('list', bucketId);
-    const bucket = this.mock.maybeBucket(bucketId);
+    const bucket = this.maybeBucket(bucketId);
     const all = bucket
       ? [...bucket.objects.values()]
           .map((object) => object.metadata)
@@ -442,8 +377,7 @@ class InMemoryStorageController implements StorageController {
   }
 
   private *bucketEntries(): IterableIterator<readonly [string, BucketState]> {
-    const buckets = this.mock as unknown as { buckets: Map<string, BucketState> };
-    yield* buckets.buckets.entries();
+    yield* this.buckets.entries();
   }
 
   private makeMetadata(
@@ -458,7 +392,7 @@ class InMemoryStorageController implements StorageController {
     }
   ): CloudStorageObjectMetadata {
     const previous = options.previous?.metadata;
-    const bucket = this.mock.getBucket(bucketId);
+    const bucket = this.getBucket(bucketId);
     const generation = options.generation ?? String(bucket.nextGeneration++);
     const now = this.nowDate();
     const createdAt = previous?.createdAt ?? now;
@@ -522,9 +456,22 @@ class InMemoryStorageController implements StorageController {
   }
 
   private requireObject(bucketId: string, path: string): StoredObject {
-    const object = this.mock.maybeBucket(bucketId)?.objects.get(path);
+    const object = this.maybeBucket(bucketId)?.objects.get(path);
     if (!object) throw this.objectNotFound(path);
     return object;
+  }
+
+  private getBucket(bucketId: string): BucketState {
+    let bucket = this.buckets.get(bucketId);
+    if (!bucket) {
+      bucket = new BucketState();
+      this.buckets.set(bucketId, bucket);
+    }
+    return bucket;
+  }
+
+  private maybeBucket(bucketId: string): BucketState | undefined {
+    return this.buckets.get(bucketId);
   }
 
   private objectNotFound(path: string): CloudStorageError {
@@ -608,7 +555,7 @@ class InMemoryStorageController implements StorageController {
 }
 
 class InMemoryCloudStorageService implements CloudStorageService {
-  constructor(private readonly ctrl: InMemoryStorageController) {}
+  constructor(private readonly ctrl: StorageController) {}
 
   bucket(bucketId?: CloudStorageBucketId): CloudStorageBucket {
     assertBucketId(bucketId);
@@ -621,7 +568,7 @@ class InMemoryCloudStorageService implements CloudStorageService {
 
 class InMemoryCloudStorageBucket implements CloudStorageBucket {
   constructor(
-    private readonly ctrl: InMemoryStorageController,
+    private readonly ctrl: StorageController,
     readonly bucketId: CloudStorageBucketId
   ) {}
 

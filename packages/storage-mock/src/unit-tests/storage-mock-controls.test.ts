@@ -1,11 +1,13 @@
 import { CloudStorageError } from '@firebase-bridge/cloud-storage';
-import { StorageMock } from '../index.js';
+import { StorageController } from '../index.js';
 
-describe('StorageMock test controls and events', () => {
+describe('StorageController test controls and events', () => {
   it('uses configured time sources for metadata, events, and operation logs', async () => {
     let now = Date.parse('2026-01-01T00:00:00.000Z');
-    const env = new StorageMock({ now: () => now });
-    const ctrl = env.createStorage({ defaultBucket: 'time.test' });
+    const ctrl = new StorageController({
+      defaultBucket: 'time.test',
+      now: () => now,
+    });
     const bucket = ctrl.service().bucket();
     const events: Date[] = [];
     ctrl.onObjectChange((record) => events.push(record.eventTime));
@@ -29,7 +31,10 @@ describe('StorageMock test controls and events', () => {
     await bucket.writeText('clock-2.txt', 'two');
     expect(events[2].toISOString()).toBe('2026-01-01T00:02:00.000Z');
 
-    const other = env.createStorage({ defaultBucket: 'time.other' });
+    const other = new StorageController({
+      defaultBucket: 'time.other',
+      now: () => now,
+    });
     now = Date.parse('2026-01-01T00:03:00.000Z');
     const otherWrite = await other.service().bucket().writeText('shared.txt', 'x');
     expect(otherWrite.metadata.createdAt.toISOString()).toBe(
@@ -39,7 +44,7 @@ describe('StorageMock test controls and events', () => {
 
   it('defaults time to the current epoch milliseconds', async () => {
     const before = Date.now();
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'time.test' });
+    const ctrl = new StorageController({ defaultBucket: 'time.test' });
     const write = await ctrl.service().bucket().writeText('now.txt', 'now');
     const after = Date.now();
 
@@ -48,9 +53,10 @@ describe('StorageMock test controls and events', () => {
   });
 
   it('emits lifecycle events with metadata snapshots only after successful operations', async () => {
-    const ctrl = new StorageMock({
+    const ctrl = new StorageController({
+      defaultBucket: 'events.test',
       now: () => Date.parse('2026-02-01T00:00:00.000Z'),
-    }).createStorage({ defaultBucket: 'events.test' });
+    });
     const bucket = ctrl.service().bucket();
     const events = [];
     ctrl.onObjectChange((record) => events.push(record));
@@ -87,7 +93,7 @@ describe('StorageMock test controls and events', () => {
   });
 
   it('records operation logs and clears them on request', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'logs.test' });
+    const ctrl = new StorageController({ defaultBucket: 'logs.test' });
     const bucket = ctrl.service().bucket();
 
     ctrl.seedObject('logs.test', 'seed.txt', 'seed');
@@ -128,7 +134,7 @@ describe('StorageMock test controls and events', () => {
   });
 
   it('keeps test-control snapshots immutable from stored objects and quiet for events', () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'controls.test' });
+    const ctrl = new StorageController({ defaultBucket: 'controls.test' });
     const events: string[] = [];
     ctrl.onObjectChange((record) => events.push(record.kind));
 
@@ -146,7 +152,7 @@ describe('StorageMock test controls and events', () => {
   });
 
   it('resets and deletes bucket state while preserving usable controllers', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'reset.test' });
+    const ctrl = new StorageController({ defaultBucket: 'reset.test' });
     const bucket = ctrl.service().bucket();
     const otherBucket = ctrl.service().bucket('other-reset.test');
 
@@ -176,7 +182,7 @@ describe('StorageMock test controls and events', () => {
   });
 
   it('does not bump epoch when resetting or deleting missing buckets', () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'reset.test' });
+    const ctrl = new StorageController({ defaultBucket: 'reset.test' });
     const initialEpoch = ctrl.epoch;
 
     ctrl.reset('missing.test');
@@ -186,7 +192,7 @@ describe('StorageMock test controls and events', () => {
   });
 
   it('injects scoped failures without side effects or events', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'fail.test' });
+    const ctrl = new StorageController({ defaultBucket: 'fail.test' });
     const bucket = ctrl.service().bucket();
     const otherBucket = ctrl.service().bucket('other.test');
     const events: string[] = [];
@@ -233,7 +239,7 @@ describe('StorageMock test controls and events', () => {
   });
 
   it('does not consume unmatched failure rules and logs injected failures', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'fail.test' });
+    const ctrl = new StorageController({ defaultBucket: 'fail.test' });
     const bucket = ctrl.service().bucket();
     await bucket.writeText('file.txt', 'one');
     ctrl.clearOperationLog();
@@ -261,7 +267,7 @@ describe('StorageMock test controls and events', () => {
   });
 
   it('generates deterministic mock signed read URLs for the same object and expiry', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'signed.test' });
+    const ctrl = new StorageController({ defaultBucket: 'signed.test' });
     const bucket = ctrl.service().bucket();
     const expiresAt = new Date('2026-01-02T00:00:00.000Z');
     await bucket.writeText('folder/file name.txt', 'signed');
@@ -285,8 +291,9 @@ describe('StorageMock test controls and events', () => {
       url: `https://signer.test/${bucketId}/${path}?generation=${metadata.generation}`,
       expiresAt: options.expiresAt,
     }));
-    const ctrl = new StorageMock({ signedUrlSigner: signer }).createStorage({
+    const ctrl = new StorageController({
       defaultBucket: 'signed.test',
+      signedUrlSigner: signer,
     });
     const bucket = ctrl.service().bucket();
     const expiresAt = new Date('2026-01-02T00:00:00.000Z');
@@ -306,16 +313,12 @@ describe('StorageMock test controls and events', () => {
     });
   });
 
-  it('allows controller signed URL signer options to override the mock default', async () => {
-    const mockSigner = jest.fn(() => ({
-      url: 'https://signer.test/mock',
-      expiresAt: new Date('2026-01-02T00:00:00.000Z'),
-    }));
+  it('uses the controller signed URL signer when configured', async () => {
     const controllerSigner = jest.fn(({ options }) => ({
       url: 'https://signer.test/controller',
       expiresAt: options.expiresAt,
     }));
-    const ctrl = new StorageMock({ signedUrlSigner: mockSigner }).createStorage({
+    const ctrl = new StorageController({
       defaultBucket: 'signed.test',
       signedUrlSigner: controllerSigner,
     });
@@ -330,7 +333,6 @@ describe('StorageMock test controls and events', () => {
       expiresAt,
     });
     expect(controllerSigner).toHaveBeenCalledTimes(1);
-    expect(mockSigner).not.toHaveBeenCalled();
   });
 
   it('applies standard signed URL validation and object errors before signing', async () => {
@@ -338,8 +340,9 @@ describe('StorageMock test controls and events', () => {
       url: 'https://signer.test/unused',
       expiresAt: options.expiresAt,
     }));
-    const ctrl = new StorageMock({ signedUrlSigner: signer }).createStorage({
+    const ctrl = new StorageController({
       defaultBucket: 'signed.test',
+      signedUrlSigner: signer,
     });
     const bucket = ctrl.service().bucket();
     const expiresAt = new Date('2026-01-02T00:00:00.000Z');
@@ -360,8 +363,9 @@ describe('StorageMock test controls and events', () => {
       url: 'https://signer.test/unused',
       expiresAt: options.expiresAt,
     }));
-    const ctrl = new StorageMock({ signedUrlSigner: signer }).createStorage({
+    const ctrl = new StorageController({
       defaultBucket: 'signed.test',
+      signedUrlSigner: signer,
     });
     const bucket = ctrl.service().bucket();
     const expiresAt = new Date('2026-01-02T00:00:00.000Z');
@@ -377,7 +381,7 @@ describe('StorageMock test controls and events', () => {
   });
 
   it('preserves mock failures as inspectable storage error causes', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'cause.test' });
+    const ctrl = new StorageController({ defaultBucket: 'cause.test' });
     const bucket = ctrl.service().bucket();
     const write = await bucket.writeText('file.txt', 'one');
 
@@ -420,14 +424,14 @@ describe('StorageMock test controls and events', () => {
         cause: expect.objectContaining({
           code: 'storage/invalid-bucket',
           message: 'Invalid bucket id "bad/bucket".',
-          mockMessage: 'StorageMock generated this Cloud Storage failure.',
+          mockMessage: 'StorageController generated this Cloud Storage failure.',
         }),
       })
     );
   });
 
   it('leaves metadata unchanged after injected metadata failures', async () => {
-    const ctrl = new StorageMock().createStorage({ defaultBucket: 'fail.test' });
+    const ctrl = new StorageController({ defaultBucket: 'fail.test' });
     const bucket = ctrl.service().bucket();
     const events: string[] = [];
     ctrl.onObjectChange((record) => events.push(record.kind));
@@ -465,7 +469,7 @@ async function expectMockCause(
       cause: expect.objectContaining({
         code,
         message,
-        mockMessage: 'StorageMock generated this Cloud Storage failure.',
+        mockMessage: 'StorageController generated this Cloud Storage failure.',
       }),
     });
     expect((error as Error & { cause?: unknown }).cause).toBeInstanceOf(

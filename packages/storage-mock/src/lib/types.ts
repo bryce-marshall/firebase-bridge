@@ -22,7 +22,7 @@ export type StorageOperationName =
   | 'seed'
   | 'testDelete';
 
-/** Options for creating a controller from a storage mock. */
+/** Options for creating a storage test controller. */
 export interface CreateStorageOptions {
   /** Default bucket id used when callers omit a bucket. */
   readonly defaultBucket?: CloudStorageBucketId;
@@ -35,15 +35,9 @@ export interface CreateStorageOptions {
 
   /** Signed URL signer override for this controller. */
   readonly signedUrlSigner?: StorageSignedUrlSigner;
-}
 
-/** Options for configuring a storage mock instance. */
-export interface StorageMockOptions {
   /** Time source used for metadata timestamps and operation logs. */
   readonly now?: () => number;
-
-  /** Default signer used to create signed read URLs. */
-  readonly signedUrlSigner?: StorageSignedUrlSigner;
 }
 
 /** Input passed to a mock signed URL signer. */
@@ -84,7 +78,7 @@ export interface StorageLifecycleEventArg {
   readonly epoch: number;
 
   /** Controller associated with the lifecycle event. */
-  readonly controller: StorageController;
+  readonly controller: StorageControllerApi;
 }
 
 /** Listener invoked for mock storage lifecycle events. */
@@ -228,8 +222,8 @@ export interface StorageTestControl {
   setClock(clock: StorageTestClock | StorageTimeSource): void;
 }
 
-/** Storage test controller that exposes a Cloud Storage service and test controls. */
-export interface StorageController extends StorageTestControl {
+/** Storage test controller API exposed by the concrete StorageController class. */
+export interface StorageControllerApi extends StorageTestControl {
   /** Default bucket id used by the service. */
   readonly defaultBucket: CloudStorageBucketId;
 
