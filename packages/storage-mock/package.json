@@ -1,6 +1,6 @@
 {
   "name": "@firebase-bridge/storage-mock",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "license": "Apache-2.0",
   "description": "In-memory Cloud Storage mock and trigger harness for Firebase Bridge.",
@@ -67,7 +67,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@firebase-bridge/cloud-storage": "0.0.1"
+    "@firebase-bridge/cloud-storage": "0.0.2"
   },
   "peerDependencies": {
     "firebase-functions": "^6.4.0 || ^7.0.0"

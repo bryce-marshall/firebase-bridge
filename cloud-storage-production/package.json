@@ -16,13 +16,13 @@
     }
   },
   "dependencies": {
-    "@firebase-bridge/cloud-storage": "0.0.1",
+    "@firebase-bridge/cloud-storage": "0.0.2",
     "cloud-storage-test-suites": "0.0.1",
     "firebase-admin": "^13.4.0",
     "tslib": "^2.3.0"
   },
   "devDependencies": {
-    "@firebase-bridge/cloud-storage": "0.0.1",
+    "@firebase-bridge/cloud-storage": "0.0.2",
     "cloud-storage-test-suites": "0.0.1",
     "firebase-admin": "^13.4.0"
   }

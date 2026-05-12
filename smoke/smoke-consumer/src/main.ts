@@ -2,7 +2,7 @@ import { isCloudStorageError } from '@firebase-bridge/cloud-storage';
 import { FirestoreMock } from '@firebase-bridge/firestore-admin';
 import { registerTrigger as triggerV1 } from '@firebase-bridge/firestore-functions/v1';
 import { registerTrigger as triggerV2 } from '@firebase-bridge/firestore-functions/v2';
-import { StorageMock } from '@firebase-bridge/storage-mock';
+import { StorageController } from '@firebase-bridge/storage-mock';
 import { registerTrigger as storageTriggerV2 } from '@firebase-bridge/storage-mock/v2';
 import * as v1 from 'firebase-functions/v1';
 import * as v2 from 'firebase-functions/v2';
@@ -202,11 +202,9 @@ async function main(): Promise<void> {
   const doc = firestore.doc('users/id-1234');
   await doc.set({ name: 'John' });
 
-  const storageEnv = new StorageMock({
-    now: () => Date.parse('2026-05-11T00:00:00.000Z'),
-  });
-  const storageCtrl = storageEnv.createStorage({
+  const storageCtrl = new StorageController({
     defaultBucket: 'imports.test',
+    now: () => Date.parse('2026-05-11T00:00:00.000Z'),
   });
   const storage = storageCtrl.service();
   const bucket = storage.bucket();
