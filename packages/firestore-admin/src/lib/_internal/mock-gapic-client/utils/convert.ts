@@ -122,14 +122,17 @@ export function transformWrites(
       const allFields = decodeDocData(context.serializer, write.update.fields);
       let data = allFields;
       let merge: MergeGranularity = write.updateMask ? 'branch' : 'root';
+      let mergePaths: string[][] | undefined;
       const transformers: DocumentFieldTransform[] = [];
 
       if (write.updateMask) {
         data = {};
         const fpaths = write.updateMask.fieldPaths ?? [];
+        mergePaths = [];
 
         for (const fieldPath of fpaths) {
           const segments = parseFieldPath(fieldPath); // robust parser (handles escapes)
+          mergePaths.push(segments);
           if (segments.length > 1) {
             merge = 'node';
           }
@@ -153,6 +156,7 @@ export function transformWrites(
           path: context.toInternalPath(docPath, 'document'),
           data,
           merge,
+          mergePaths,
           precondition: toPrecondition(write.currentDocument),
           transformers,
         },

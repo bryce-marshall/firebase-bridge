@@ -360,6 +360,14 @@ export interface NormalizedSet {
   transformers?: DocumentFieldTransform[];
 
   /**
+   * Exact field paths targeted by a field-mask write.
+   *
+   * This is required to distinguish replacing a nested node from recursively
+   * merging the maps used to reach that node.
+   */
+  mergePaths?: string[][];
+
+  /**
    * Optional write precondition (e.g., exists/doesNotExist, updateTime match).
    * If not met at apply-time, the write fails with a precondition error.
    */
@@ -2824,6 +2832,19 @@ function mergeInto(op: NormalizedSet, current: DocumentData): DocumentData {
   const input = cloneDocumentData(op.data);
 
   if (op.merge === 'root') return input;
+
+  if (op.merge === 'node' && op.mergePaths) {
+    const target = cloneDocumentData(current);
+
+    for (const path of op.mergePaths) {
+      const value = getDeepValue(input, path);
+      if (value !== undefined) {
+        setDeepValue(target, path, value);
+      }
+    }
+
+    return target;
+  }
 
   const target = cloneDocumentData(current);
 

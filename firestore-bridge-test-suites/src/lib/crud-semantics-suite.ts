@@ -131,6 +131,32 @@ export function crudSemtanticsSuite(context: FirestoreBridgeTestContext) {
       ).toBe(true);
     });
 
+    it('replaces a nested map when assigning its whole node', async () => {
+      const ref = col().doc('update-whole-nested-map');
+      await ref.set({
+        projection: {
+          active: {
+            staleEntry: { enabled: true },
+          },
+        },
+      });
+
+      await ref.update({
+        'projection.active': {
+          currentEntry: { enabled: true },
+        },
+      });
+
+      const snap = await ref.get();
+      expect(snap.data()).toEqual({
+        projection: {
+          active: {
+            currentEntry: { enabled: true },
+          },
+        },
+      });
+    });
+
     it('create() succeeds only if the doc does not exist; otherwise ALREADY_EXISTS', async () => {
       const ref = col().doc('create-precond');
       const wr1 = await ref.create({ v: 1 });
